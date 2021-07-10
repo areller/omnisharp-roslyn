@@ -7,6 +7,8 @@
 
 using System.ComponentModel;
 using System.Net;
+using System.Reflection;
+using System.Xml;
 
 // Arguments
 var target = Argument("target", "Default");
@@ -235,18 +237,38 @@ Task("CreateMSBuildFolder")
         "Microsoft.Build.Utilities.v12.0",
     };
 
+    // These dependencies are not included in the Microsoft.NET.Sdk package
+    // but are necessary for some build tasks.
     var msBuildDependencies = new []
     {
+        "Microsoft.Deployment.DotNet.Releases",
+        "Microsoft.NET.StringTools",
+        "Newtonsoft.Json",
+        "System.Threading.Tasks.Dataflow",
+        "System.Resources.Extensions"
+    };
+
+    // These dependencies are all copied from the Microsoft.NET.Sdk package since
+    // we are trying to model a particular SDK's build tools.
+    var msBuildSdkDependencies = new []
+    {
         "Microsoft.Bcl.AsyncInterfaces",
+        "NuGet.Common",
+        "NuGet.Configuration",
+        "NuGet.DependencyResolver.Core",
+        "NuGet.Frameworks",
+        "NuGet.LibraryModel",
+        "NuGet.Packaging",
+        "NuGet.ProjectModel",
+        "NuGet.Protocol",
+        "NuGet.Versioning",
         "System.Buffers",
         "System.Collections.Immutable",
         "System.Memory",
         "System.Numerics.Vectors",
-        "System.Resources.Extensions",
         "System.Runtime.CompilerServices.Unsafe",
         "System.Text.Encodings.Web",
         "System.Text.Json",
-        "System.Threading.Tasks.Dataflow",
         "System.Threading.Tasks.Extensions",
     };
 
@@ -362,6 +384,20 @@ Task("CreateMSBuildFolder")
         }
     }
 
+    Information("Copying MSBuild SDK dependencies...");
+
+    var sdkToolsSourceFolder = CombinePaths(env.Folders.Tools, "Microsoft.NET.Sdk", "tools", "net472");
+    foreach (var dependency in msBuildSdkDependencies)
+    {
+        var dependencyFileName = dependency + ".dll";
+        var dependencySourcePath = CombinePaths(sdkToolsSourceFolder, dependencyFileName);
+        var dependencyTargetPath = CombinePaths(msbuildCurrentBinTargetFolder, dependencyFileName);
+        if (FileHelper.Exists(dependencySourcePath))
+        {
+            FileHelper.Copy(dependencySourcePath, dependencyTargetPath);
+        }
+    }
+
     // Copy MSBuild SDK Resolver and DotNetHostResolver
     Information("Copying MSBuild SDK resolver...");
     var msbuildSdkResolverSourceFolder = CombinePaths(env.Folders.Tools, "Microsoft.DotNet.MSBuildSdkResolver", "lib", "net472");
@@ -425,16 +461,7 @@ Task("CreateMSBuildFolder")
     var nugetPackages = new []
     {
         "NuGet.Commands",
-        "NuGet.Common",
-        "NuGet.Configuration",
-        "NuGet.Credentials",
-        "NuGet.DependencyResolver.Core",
-        "NuGet.Frameworks",
-        "NuGet.LibraryModel",
-        "NuGet.Packaging",
-        "NuGet.ProjectModel",
-        "NuGet.Protocol",
-        "NuGet.Versioning"
+        "NuGet.Credentials"
     };
 
     foreach (var nugetPackage in nugetPackages)
@@ -445,11 +472,6 @@ Task("CreateMSBuildFolder")
             source: CombinePaths(env.Folders.Tools, nugetPackage, "lib", "net472", binaryName),
             destination: CombinePaths(msbuildCurrentBinTargetFolder, binaryName));
     }
-
-    // Copy additional dependency of Microsoft.Build.NuGetSdkResolver
-    FileHelper.Copy(
-        source: CombinePaths(env.Folders.Tools, "Newtonsoft.Json", "lib", "net45", "Newtonsoft.Json.dll"),
-        destination: CombinePaths(msbuildCurrentBinTargetFolder, "Newtonsoft.Json.dll"));
 
     // Copy content of Microsoft.Net.Compilers.Toolset
     Information("Copying Microsoft.Net.Compilers.Toolset...");
@@ -699,6 +721,54 @@ void CopyExtraDependencies(BuildEnvironment env, string outputFolder)
     FileHelper.Copy(CombinePaths(env.WorkingDirectory, "license.md"), CombinePaths(outputFolder, "license.md"), overwrite: true);
 }
 
+void AddOmniSharpBindingRedirects(string omnisharpFolder)
+{
+    var appConfig = CombinePaths(omnisharpFolder, "OmniSharp.exe.config");
+
+    // Load app.config
+    var document = new XmlDocument();
+    document.Load(appConfig);
+
+    // Find bindings
+    var runtime = document.GetElementsByTagName("runtime")[0];
+    var assemblyBinding = document.CreateElement("assemblyBinding", "urn:schemas-microsoft-com:asm.v1");
+
+    // Find OmniSharp libraries
+    foreach (var filePath in System.IO.Directory.GetFiles(omnisharpFolder, "OmniSharp.*.dll"))
+    {
+        // Read assembly name from OmniSharp library
+        var assemblyName = AssemblyName.GetAssemblyName(filePath);
+
+        // Create binding redirect and add to bindings
+        var redirect = CreateBindingRedirect(document, assemblyName);
+        assemblyBinding.AppendChild(redirect);
+    }
+
+    runtime.AppendChild(assemblyBinding);
+
+    // Save updated app.config
+    document.Save(appConfig);
+}
+
+XmlElement CreateBindingRedirect(XmlDocument document, AssemblyName assemblyName)
+{
+    var dependentAssembly = document.CreateElement("dependentAssembly", "urn:schemas-microsoft-com:asm.v1");
+
+    var assemblyIdentity = document.CreateElement("assemblyIdentity", "urn:schemas-microsoft-com:asm.v1");
+    assemblyIdentity.SetAttribute("name", assemblyName.Name);
+    var publicKeyToken = BitConverter.ToString(assemblyName.GetPublicKeyToken()).Replace("-", string.Empty).ToLower();
+    assemblyIdentity.SetAttribute("publicKeyToken", publicKeyToken);
+    assemblyIdentity.SetAttribute("culture", "neutral");
+    dependentAssembly.AppendChild(assemblyIdentity);
+
+    var bindingRedirect = document.CreateElement("bindingRedirect", "urn:schemas-microsoft-com:asm.v1");
+    bindingRedirect.SetAttribute("oldVersion", $"0.0.0.0-{assemblyName.Version}");
+    bindingRedirect.SetAttribute("newVersion", assemblyName.Version.ToString());
+    dependentAssembly.AppendChild(bindingRedirect);
+
+    return dependentAssembly;
+}
+
 string PublishMonoBuild(string project, BuildEnvironment env, BuildPlan plan, string configuration)
 {
     Information($"Publishing Mono build for {project}...");
@@ -710,6 +780,7 @@ string PublishMonoBuild(string project, BuildEnvironment env, BuildPlan plan, st
     CopyMonoBuild(env, buildFolder, outputFolder);
 
     CopyExtraDependencies(env, outputFolder);
+    AddOmniSharpBindingRedirects(outputFolder);
 
     // Copy dependencies of Mono build
     FileHelper.Copy(
@@ -747,6 +818,7 @@ string PublishMonoBuildForPlatform(string project, MonoRuntime monoRuntime, Buil
     CopyMonoBuild(env, sourceFolder, omnisharpFolder);
 
     CopyExtraDependencies(env, outputFolder);
+    AddOmniSharpBindingRedirects(omnisharpFolder);
 
     Package(project, monoRuntime.PlatformName, outputFolder, env.Folders.ArtifactsPackage, env.Folders.DeploymentPackage);
 
@@ -809,6 +881,7 @@ string PublishWindowsBuild(string project, BuildEnvironment env, BuildPlan plan,
     DirectoryHelper.Copy($"{env.Folders.MSBuild}", CombinePaths(outputFolder, ".msbuild"));
 
     CopyExtraDependencies(env, outputFolder);
+    AddOmniSharpBindingRedirects(outputFolder);
 
     Package(project, rid, outputFolder, env.Folders.ArtifactsPackage, env.Folders.DeploymentPackage);
 
