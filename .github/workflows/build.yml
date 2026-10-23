@@ -1,13 +1,13 @@
-
-name: 'Build'
+name: "Build"
 env:
-  DotNetVersion: "5.0.104"
-  DotNetVersion2: "3.1.407"
-  NuGetVersion: "5.7.0"
-  MonoVersion: "6.12.0"
+  DotNetVersion: "10.0.401"
+  DotNetVersion2: "9.0.318"
+  DotNetVersion3: "8.0.425"
+  DotNetVersion4: "11.0.100-rc.1.26425.128"
   Artifacts: ${{ github.workspace }}/artifacts/
   Coverage: ${{ github.workspace }}/coverage/
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  CLR_OPENSSL_VERSION_OVERRIDE: 1.1
 defaults:
   run:
     shell: pwsh
@@ -15,8 +15,7 @@ on:
   pull_request:
     branches:
       - master
-    tags:
-      - '*'
+      - feature/*
   workflow_dispatch:
 jobs:
   build:
@@ -24,106 +23,119 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-18.04, windows-2019, macos-10.15]
-    name: 'Build'
+        include:
+          - platform: linux
+            os: ubuntu-22.04
+          - platform: windows
+            os: windows-latest
+          - platform: macos
+            os: macos-15-intel
+    name: "Build (${{ matrix.platform }})"
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
-          clean: 'false'
-          fetch-depth: '0'
+          clean: "false"
+          fetch-depth: "0"
 
-      # TODO: Need to figure out the correct way to install mono on linux / mac
-      # Currently the latest image has mono 6.12
-      # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu1804-README.md
-      # - name: 🔨 Use Mono ${{ env.MonoVersion }} SDK
-      #   uses: maxim-lobanov/setup-xamarin@v1
-      #   with:
-      #     mono-version: ${{ env.MonoVersion }}
-
-      - name: Setup NuGet.exe
-        uses: nuget/setup-nuget@v1
+      - name: 🔨 Use .NET Core SDKs
+        uses: actions/setup-dotnet@v4
         with:
-          nuget-version: ${{ env.NuGetVersion }}
-
-      - name: 🔨 Use .NET Core 2.1 SDK
-        uses: actions/setup-dotnet@v1.7.2
-        with:
-          dotnet-version: '2.1.x'
-
-      - name: 🔨 Use .NET Core ${{ env.DotNetVersion2 }} SDK
-        uses: actions/setup-dotnet@v1.7.2
-        with:
-          dotnet-version: ${{ env.DotNetVersion2 }}
-
-      - name: 🔨 Use .NET Core ${{ env.DotNetVersion }} SDK
-        uses: actions/setup-dotnet@v1.7.2
-        with:
-          dotnet-version: ${{ env.DotNetVersion }}
+          dotnet-version: |
+            ${{ env.DotNetVersion3 }}
+            ${{ env.DotNetVersion2 }}
+            ${{ env.DotNetVersion }}
+            ${{ env.DotNetVersion4 }}
 
       - name: 🎁 dotnet tool restore
         run: |
           dotnet tool restore
 
-      - name: 🎁 nuget install
-        run: |
-          nuget install tools/packages.config -ExcludeVersion -OutputDirectory tools
-
-      # - name: 🍰 Run Cake
-      #   run: |
-      #     dotnet cake --bootstrap
-      #     dotnet cake --configuration=Release --verbosity=Verbose --target=CI --publish-all --archive
-
       - name: 🍰 Run Cake
-        if: ${{ runner.os == 'Linux' || runner.os == 'macOS' }}
-        shell: bash
         run: |
-          echo $PATH
-          chmod 755 ./build.sh
-          ./build.sh --configuration Release --verbosity Verbose --target CI --publish-all --archive
+          dotnet cake --configuration=Release --verbosity=Verbose --target=Build
 
-      - name: 🍰 Run Cake
-        if: ${{ runner.os == 'Windows' }}
-        shell: powershell
-        run: |
-          .\build.ps1 -configuration Release -verbosity Verbose -target CI --publish-all --archive
+      - name: ⬆ Publish test modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: "test-modules-${{ matrix.platform }}"
+          path: bin/Release/*.Tests/net10.0/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: ⬆ Publish Logs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         continue-on-error: true
         if: ${{ always() }}
         with:
-          name: 'logs - ${{ github.workflow }} ${{ matrix.os }}'
-          path: '${{ env.Artifacts }}/logs/'
+          name: "logs - ${{ github.workflow }} ${{ matrix.os }}"
+          path: "${{ env.Artifacts }}/logs/"
 
-      - name: ⬆ Publish Packages
-        uses: actions/upload-artifact@v2
-        continue-on-error: true
-        if: ${{ always() }}
-        with:
-          name: 'packages'
-          path: '${{ env.Artifacts }}/package/'
+  packaging:
+    name: Packaging
+    uses: ./.github/workflows/package.yml
 
-      - name: ⬆ Publish Deployment
-        uses: actions/upload-artifact@v2
-        continue-on-error: true
-        if: ${{ always() }}
+  test:
+    name: "Test (${{ matrix.runner.platform }}, ${{ matrix.shard.name }})"
+    needs: build
+    runs-on: ${{ matrix.runner.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - platform: linux
+            os: ubuntu-22.04
+          - platform: windows
+            os: windows-latest
+          - platform: macos
+            os: macos-15-intel
+        shard:
+          - name: shard1
+            testProjects: OmniSharp.Lsp.Tests,OmniSharp.MSBuild.Tests,OmniSharp.Script.Tests,OmniSharp.Tests,OmniSharp.Stdio.Tests,OmniSharp.Http.Tests
+          - name: shard2
+            testProjects: OmniSharp.Roslyn.CSharp.Tests,OmniSharp.DotNetTest.Tests,OmniSharp.Cake.Tests
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: 'deployment'
-          path: '${{ env.Artifacts }}/deployment/'
+          fetch-depth: "1"
+          fetch-tags: "false"
 
-      - name: ⬆ Publish NuGet
-        uses: actions/upload-artifact@v2
-        continue-on-error: true
-        if: ${{ always() }}
+      - name: 🔨 Use .NET Core SDKs
+        uses: actions/setup-dotnet@v4
         with:
-          name: 'nuget'
-          path: '${{ env.Artifacts }}/nuget/'
+          dotnet-version: |
+            ${{ env.DotNetVersion3 }}
+            ${{ env.DotNetVersion2 }}
+            ${{ env.DotNetVersion }}
+            ${{ env.DotNetVersion4 }}
 
-      - name: ⬆ Publish Scripts
-        uses: actions/upload-artifact@v2
+      - name: 🎁 dotnet tool restore
+        run: |
+          dotnet tool restore
+
+      - name: ⬇ Download test modules
+        uses: actions/download-artifact@v4
+        with:
+          name: "test-modules-${{ matrix.runner.platform }}"
+          path: bin/Release/
+
+      - name: 🍰 Run tests
+        uses: nick-invision/retry@v2
+        with:
+          shell: bash
+          timeout_minutes: 40
+          max_attempts: 3
+          retry_on: error
+          command: |
+            dotnet cake --configuration=Release --verbosity=Verbose --target=TestFromBuild --test-project="$TEST_PROJECT"
+        env:
+          TEST_PROJECT: ${{ matrix.shard.testProjects }}
+
+      - name: ⬆ Publish test logs
+        uses: actions/upload-artifact@v4
         continue-on-error: true
         if: ${{ always() }}
         with:
-          name: 'scripts - ${{ matrix.os }}'
-          path: '${{ env.Artifacts }}/scripts/'
+          name: "test-logs-${{ matrix.runner.platform }}-${{ matrix.shard.name }}"
+          path: "${{ env.Artifacts }}/logs/"

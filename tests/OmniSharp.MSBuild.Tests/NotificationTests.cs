@@ -6,7 +6,6 @@ using OmniSharp.Mef;
 using OmniSharp.MSBuild.Notification;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.MSBuild.Tests
 {
@@ -53,7 +52,7 @@ namespace OmniSharp.MSBuild.Tests
                 var eventArgs = Assert.Single(allEventArgs);
                 Assert.Equal(
                     $"{testProject.Directory}/{testProject.Name}.csproj".EnsureForwardSlashes(),
-                    eventArgs.ProjectInstance.FullPath.EnsureForwardSlashes());
+                    eventArgs.ProjectFilePath.EnsureForwardSlashes());
             }
         }
     }

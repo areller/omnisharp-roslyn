@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using OmniSharp.Models.Diagnostics;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.MSBuild.Tests
 {
@@ -15,8 +14,7 @@ namespace OmniSharp.MSBuild.Tests
         {
         }
 
-        // possible thread starvation on *nix when running in Azure DevOps
-        [ConditionalFact(typeof(WindowsOnly))]
+        [Fact]
         public async Task CanLoadComplexAnalyzers()
         {
             using (var testProject = await TestAssets.Instance.GetTestProjectAsync("ProjectWithComplexAnalyzers"))

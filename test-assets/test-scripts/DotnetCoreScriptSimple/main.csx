@@ -1,2 +1,2 @@
-#! "netcoreapp3.1"
+#! "net8.0"
 Console.WriteLine("Hello world!");

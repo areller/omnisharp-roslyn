@@ -1,10 +1,10 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using OmniSharp.Models.V2;
 using OmniSharp.Roslyn.CSharp.Services.Structure;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -36,9 +36,26 @@ namespace OmniSharp.Roslyn.CSharp.Tests
                 .ToArray();
 
             var expected = testFile.Content.GetSpans()
-                .Select(span => testFile.Content.GetRangeFromSpan(span).ToRange()).ToArray();
+                .Select(span => testFile.Content.GetRangeFromSpan(span).ToRange())
+                .Reverse()
+                .ToArray();
 
             Assert.Equal(expected, lineSpans);
+        }
+
+        [Fact]
+        public async Task NonExistingFile()
+        {
+            var request = new BlockStructureRequest
+            {
+                FileName = $"{Guid.NewGuid().ToString("N")}.cs"
+            };
+
+            var requestHandler = GetRequestHandler(SharedOmniSharpTestHost);
+            var response = await requestHandler.Handle(request);
+
+            Assert.NotNull(response);
+            Assert.Empty(response.Spans);
         }
 
         [Fact]

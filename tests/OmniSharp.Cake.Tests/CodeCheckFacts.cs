@@ -8,7 +8,6 @@ using OmniSharp.Models.CodeCheck;
 using OmniSharp.Models.UpdateBuffer;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 using Xunit.Sdk;
 
 namespace OmniSharp.Cake.Tests
@@ -19,7 +18,7 @@ namespace OmniSharp.Cake.Tests
 
         public CodeCheckFacts(ITestOutputHelper testOutput) : base(testOutput)
         {
-            _logger = LoggerFactory.CreateLogger<AutoCompleteFacts>();
+            _logger = LoggerFactory.CreateLogger<CodeCheckFacts>();
         }
 
         protected override string EndpointName => OmniSharpEndpoints.CodeCheck;

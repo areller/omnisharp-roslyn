@@ -14,7 +14,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OmniSharp;
 using OmniSharp.FileWatching;
-using OmniSharp.MSBuild.Discovery;
 using OmniSharp.Roslyn.EditorConfig;
 using OmniSharp.Script;
 using OmniSharp.Services;
@@ -46,8 +45,10 @@ namespace TestUtility
             workspace.AddDocument(documentInfo);
         }
 
-        public static IEnumerable<ProjectId> AddProjectToWorkspace(OmniSharpWorkspace workspace, string filePath, string[] frameworks, TestFile[] testFiles, ImmutableArray<AnalyzerReference> analyzerRefs = default)
+        public static IEnumerable<ProjectId> AddProjectToWorkspace(OmniSharpWorkspace workspace, string filePath, string[] frameworks, TestFile[] testFiles, TestFile[] otherFiles = null, ImmutableArray<AnalyzerReference> analyzerRefs = default)
         {
+            otherFiles ??= Array.Empty<TestFile>();
+
             var versionStamp = VersionStamp.Create();
             var references = GetReferences();
             frameworks = frameworks ?? new[] { string.Empty };
@@ -84,14 +85,26 @@ namespace TestUtility
                     workspace.AddDocument(projectInfo.Id, testFile.FileName, TextLoader.From(TextAndVersion.Create(testFile.Content.Text, versionStamp)), SourceCodeKind.Regular);
                 }
 
+                foreach (var otherFile in otherFiles)
+                {
+                    workspace.AddAdditionalDocument(projectInfo.Id, otherFile.FileName, TextLoader.From(TextAndVersion.Create(otherFile.Content.Text, versionStamp)));
+                }
+
                 projectsIds.Add(projectInfo.Id);
             }
 
             return projectsIds;
         }
 
+        private static ImmutableArray<PortableExecutableReference> _references;
+
         private static IEnumerable<PortableExecutableReference> GetReferences()
         {
+            if (!_references.IsDefaultOrEmpty)
+            {
+                return _references;
+            }
+
             // This is a bit messy. Essentially, we need to add all assemblies that type forwarders might point to.
             var assemblies = new[]
             {
@@ -100,37 +113,22 @@ namespace TestUtility
                 AssemblyHelpers.FromType(typeof(Stack<>)),
                 AssemblyHelpers.FromType(typeof(Lazy<,>)),
                 AssemblyHelpers.FromName("System.Runtime"),
-                AssemblyHelpers.FromName("mscorlib")
+                AssemblyHelpers.FromType(typeof(Console)),
             };
 
-            var references = assemblies
+            _references = assemblies
                 .Where(a => a != null)
                 .Select(a => a.Location)
                 .Distinct()
-                .Select(l => MetadataReference.CreateFromFile(l));
+                .Select(l => MetadataReference.CreateFromFile(l))
+                .ToImmutableArray();
 
-            return references;
-        }
-
-        public static MSBuildInstance AddDotNetCoreToFakeInstance(this MSBuildInstance instance)
-        {
-            const string dotnetSdkResolver = "Microsoft.DotNet.MSBuildSdkResolver";
-
-            var directory = Path.Combine(
-                instance.MSBuildPath,
-                "SdkResolvers",
-                dotnetSdkResolver
-            );
-
-            Directory.CreateDirectory(directory);
-
-            TestIO.TouchFakeFile(Path.Combine(directory, dotnetSdkResolver + ".dll"));
-
-            return instance;
+            return _references;
         }
 
         public static IConfiguration GetConfigurationDataWithAnalyzerConfig(
             bool roslynAnalyzersEnabled = false,
+            bool analyzeOpenDocumentsOnly = false,
             bool editorConfigEnabled = false,
             Dictionary<string, string> existingConfiguration = null)
         {
@@ -139,12 +137,14 @@ namespace TestUtility
                 return new Dictionary<string, string>()
                 {
                     { "RoslynExtensionsOptions:EnableAnalyzersSupport", roslynAnalyzersEnabled.ToString() },
+                    { "RoslynExtensionsOptions:AnalyzeOpenDocumentsOnly", analyzeOpenDocumentsOnly.ToString() },
                     { "FormattingOptions:EnableEditorConfigSupport", editorConfigEnabled.ToString() }
                 }.ToConfiguration();
             }
 
             var copyOfExistingConfigs = existingConfiguration.ToDictionary(x => x.Key, x => x.Value);
             copyOfExistingConfigs.Add("RoslynExtensionsOptions:EnableAnalyzersSupport", roslynAnalyzersEnabled.ToString());
+            copyOfExistingConfigs.Add("RoslynExtensionsOptions:AnalyzeOpenDocumentsOnly", analyzeOpenDocumentsOnly.ToString());
             copyOfExistingConfigs.Add("FormattingOptions:EnableEditorConfigSupport", editorConfigEnabled.ToString());
 
             return copyOfExistingConfigs.ToConfiguration();

@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -316,14 +315,14 @@ public class MyClass
                        public virtual void Test(string text, string moreText) {}
                     }
 
-                    class FooChild : Foo 
+                    class FooChild : Foo
                     {
                       override $$
                     }
                 ";
 
             var completions = await FindCompletionsAsync(filename, source);
-            ContainsCompletions(completions.Select(c => c.CompletionText), "Equals(object obj)", "GetHashCode()", "Test(string text)", "Test(string text, string moreText)", "ToString()");
+            ContainsCompletions(completions.Select(c => c.CompletionText), "Equals(object? obj)", "GetHashCode()", "Test(string text)", "Test(string text, string moreText)", "ToString()");
         }
 
         [Theory]
@@ -350,7 +349,7 @@ public class MyClass
                 "Prin$$";
 
             var completions = await FindCompletionsAsync("dummy.csx", source);
-            ContainsCompletions(completions.Select(c => c.CompletionText), new[] { "Print", "PrintOptions" }); 
+            ContainsCompletions(completions.Select(c => c.CompletionText), new[] { "Print", "PrintOptions" });
         }
 
         [Theory]
@@ -475,21 +474,21 @@ class C
             Assert.Contains(@"The ""G"" standard format specifier", gStandardCompletion.Description);
         }
 
-        [ConditionalTheory(typeof(WindowsOnly))]
+        [ConditionalTheory(typeof(WindowsOnly), typeof(DesktopRuntimeOnly))]
         [InlineData("dummy.cs")]
         [InlineData("dummy.csx")]
         public async Task Embedded_language_completion_provider_for_regex(string filename)
         {
-            const string source = @"		
- using System;		
- using System.Text.RegularExpressions;		
- class C		
- {		
-     void M()		
-     {		
-         var r = Regex.Match(""foo"", ""$$""		
-     }		
- }		
+            const string source = @"
+ using System;
+ using System.Text.RegularExpressions;
+ class C
+ {
+     void M()
+     {
+         var r = Regex.Match(""foo"", ""$$""
+     }
+ }
  ";
 
             var completions = await FindCompletionsAsync(filename, source);
@@ -616,7 +615,7 @@ class C
 }";
 
             var completions = await FindCompletionsAsync(filename, input, wantSnippet: true, triggerChar: " ");
-            Assert.NotEmpty(completions.Where(completion => completion.Preselect == true));
+            Assert.Contains(completions, completion => completion.Preselect == true);
         }
 
         [Theory]

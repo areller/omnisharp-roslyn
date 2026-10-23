@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -21,10 +22,14 @@ namespace OmniSharp
         private readonly CommandOption _logLevel;
         private readonly CommandOption _applicationRoot;
         private readonly CommandOption _debug;
+        private readonly CommandOption _locale;
 
         public CommandLineApplication()
         {
-            Application = new McMaster.Extensions.CommandLineUtils.CommandLineApplication(throwOnUnexpectedArg: false);
+            Application = new McMaster.Extensions.CommandLineUtils.CommandLineApplication
+            {
+                UnrecognizedArgumentHandling = UnrecognizedArgumentHandling.StopParsingAndCollect
+            };
             Application.HelpOption("-? | -h | --help");
 
             _applicationRoot = Application.Option("-s | --source", "Solution or directory for OmniSharp to point at (defaults to current directory).", CommandOptionType.SingleValue);
@@ -34,6 +39,7 @@ namespace OmniSharp
             _zeroBasedIndices = Application.Option("-z | --zero-based-indices", "Use zero based indices in request/responses (defaults to 'false').", CommandOptionType.NoValue);
             _plugin = Application.Option("-pl | --plugin", "Plugin name(s).", CommandOptionType.MultipleValue);
             _debug = Application.Option("-d | --debug", "Wait for debugger to attach", CommandOptionType.NoValue);
+            _locale = Application.Option("--locale", "Locale to use for localization (defaults to system locale).", CommandOptionType.SingleValue);
         }
 
         public int Execute(string[] args)
@@ -62,12 +68,24 @@ namespace OmniSharp
             return Application.Execute(args.Except(OtherArgs).ToArray());
         }
 
+        [Obsolete("Please use OnExecuteAsync instead")]
         public void OnExecute(Func<Task<int>> func)
         {
-            Application.OnExecute(() =>
+            Application.OnExecuteAsync((_) =>
             {
+                SetLocale();
                 DebugAttach();
                 return func();
+            });
+        }
+
+        public void OnExecuteAsync(Func<CancellationToken, Task<int>> func)
+        {
+            Application.OnExecuteAsync((token) =>
+            {
+                SetLocale();
+                DebugAttach();
+                return func(token);
             });
         }
 
@@ -75,6 +93,7 @@ namespace OmniSharp
         {
             Application.OnExecute(() =>
             {
+                SetLocale();
                 DebugAttach();
                 return func();
             });
@@ -101,6 +120,24 @@ namespace OmniSharp
                 while (!Debugger.IsAttached)
                 {
                     Thread.Sleep(100);
+                }
+            }
+        }
+
+        public string Locale => _locale.GetValueOrDefault(string.Empty);
+
+        private void SetLocale()
+        {
+            if (!string.IsNullOrEmpty(Locale))
+            {
+                try
+                {
+                    CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(Locale);
+                }
+                catch (CultureNotFoundException)
+                {
+                    // We couldn't find the culture, log a warning and fallback to the OS configured value.
+                    Console.Error.WriteLine($"Culture {Locale} was not found, falling back to OS culture.");
                 }
             }
         }

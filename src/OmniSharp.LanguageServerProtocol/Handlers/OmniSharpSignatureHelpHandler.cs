@@ -15,9 +15,9 @@ namespace OmniSharp.LanguageServerProtocol.Handlers
     internal class OmniSharpSignatureHelpHandler : SignatureHelpHandlerBase
     {
         private readonly Mef.IRequestHandler<SignatureHelpRequest, SignatureHelpResponse> _signatureHandler;
-        private readonly DocumentSelector _documentSelector;
+        private readonly TextDocumentSelector _documentSelector;
 
-        public OmniSharpSignatureHelpHandler(Mef.IRequestHandler<SignatureHelpRequest, SignatureHelpResponse> signatureHandler, DocumentSelector documentSelector)
+        public OmniSharpSignatureHelpHandler(Mef.IRequestHandler<SignatureHelpRequest, SignatureHelpResponse> signatureHandler, TextDocumentSelector documentSelector)
         {
             _signatureHandler = signatureHandler;
             _documentSelector = documentSelector;
@@ -49,7 +49,7 @@ namespace OmniSharp.LanguageServerProtocol.Handlers
 
             var containerSignatures = omnisharpResponse.Signatures.Select(x => new SignatureInformation
             {
-                Documentation = x.Documentation,
+                Documentation = x.StructuredDocumentation.SummaryText,
                 Label = x.Label,
                 Parameters = new Container<ParameterInformation>(x.Parameters.Select(param => new ParameterInformation
                 {
@@ -73,7 +73,7 @@ namespace OmniSharp.LanguageServerProtocol.Handlers
             return new SignatureHelpRegistrationOptions()
             {
                 DocumentSelector = _documentSelector,
-                TriggerCharacters = new[] {".", "?", "["}
+                TriggerCharacters = new[] { "(", ",", "<", "{", "[" }
             };
         }
     }

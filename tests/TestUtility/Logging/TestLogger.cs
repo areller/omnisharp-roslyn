@@ -1,6 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using OmniSharp.Logging;
-using Xunit.Abstractions;
+using Xunit;
 
 namespace TestUtility.Logging
 {
@@ -16,7 +18,16 @@ namespace TestUtility.Logging
 
         protected override void WriteMessage(LogLevel logLevel, string message)
         {
-            _output?.WriteLine(message);
+            try
+            {
+                _output?.WriteLine(message);
+            }
+            catch (InvalidOperationException exception)
+                when (exception.Message == "There is no currently active test.")
+            {
+                // Process output can arrive after xUnit completes the test.
+                Trace.WriteLine(message);
+            }
         }
     }
 }

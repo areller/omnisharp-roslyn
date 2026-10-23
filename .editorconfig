@@ -8,14 +8,23 @@ insert_final_newline = true
 indent_style = space
 indent_size = 4
 
+# CA2254: The logging message template should not vary between calls to 'LoggerExtensions.LogDebug(ILogger, string?, params object?[])'
+dotnet_diagnostic.CA2254.severity = none
 dotnet_diagnostic.VSTHRD002.severity = none
 dotnet_diagnostic.VSTHRD003.severity = none
 dotnet_diagnostic.VSTHRD105.severity = none
 dotnet_diagnostic.VSTHRD110.severity = none
 dotnet_diagnostic.VSTHRD200.severity = none
 
+dotnet_sort_system_directives_first = true
+
 [*.cs]
 indent_size = 4
 
 [*.{yml,yaml}]
 indent_size = 2
+
+[tests/**/*.cs]
+dotnet_diagnostic.RS1038.severity = none
+dotnet_diagnostic.RS1041.severity = none
+dotnet_diagnostic.RS1042.severity = none

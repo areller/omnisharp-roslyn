@@ -13,7 +13,6 @@ using OmniSharp.Roslyn.CSharp.Workers.Formatting;
 using OmniSharp.Services;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -235,23 +234,18 @@ class C {
         {
             var testFile = new TestFile("dummy.cs", "namespace Bar\n{\n    class Foo {}\n}");
 
-            using (var host = CreateOmniSharpHost(testFile))
+            using var host = CreateOmniSharpHost(new[] { testFile }, new Dictionary<string, string>
             {
-                var optionsProvider = new CSharpFormattingWorkspaceOptionsProvider();
+                ["FormattingOptions:NewLine"] = "\n",
+                ["FormattingOptions:IndentationSize"] = "1"
+            });
 
-                var omnisharpOptions = new OmniSharpOptions();
-                omnisharpOptions.FormattingOptions.NewLine = "\n";
-                omnisharpOptions.FormattingOptions.IndentationSize = 1;
+            var requestHandler = host.GetRequestHandler<CodeFormatService>(OmniSharpEndpoints.CodeFormat);
 
-                host.Workspace.TryApplyChanges(host.Workspace.CurrentSolution.WithOptions(optionsProvider.Process(host.Workspace.Options, omnisharpOptions, new OmniSharpEnvironment())));
+            var request = new CodeFormatRequest { FileName = testFile.FileName };
+            var response = await requestHandler.Handle(request);
 
-                var requestHandler = host.GetRequestHandler<CodeFormatService>(OmniSharpEndpoints.CodeFormat);
-
-                var request = new CodeFormatRequest { FileName = testFile.FileName };
-                var response = await requestHandler.Handle(request);
-
-                Assert.Equal("namespace Bar\n{\n class Foo { }\n}", response.Buffer);
-            }
+            Assert.Equal("namespace Bar\n{\n class Foo { }\n}", response.Buffer);
         }
 
         [Fact]

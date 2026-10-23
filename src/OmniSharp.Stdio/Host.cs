@@ -16,6 +16,7 @@ using OmniSharp.Plugins;
 using OmniSharp.Services;
 using OmniSharp.Protocol;
 using OmniSharp.Utilities;
+using System.Globalization;
 
 namespace OmniSharp.Stdio
 {
@@ -30,6 +31,7 @@ namespace OmniSharp.Stdio
         private readonly IOmniSharpEnvironment _environment;
         private readonly CancellationTokenSource _cancellationTokenSource;
         private readonly CachedStringBuilder _cachedStringBuilder;
+        private static readonly double TimestampToTicks = TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency;
 
         public Host(
             TextReader input, ISharedTextWriter writer, IOmniSharpEnvironment environment,
@@ -110,11 +112,19 @@ namespace OmniSharp.Stdio
             endpointHandlers.Add(
                 OmniSharpEndpoints.StopServer,
                 new Lazy<EndpointHandler>(
+#if NETCOREAPP
+                    () => new GenericEndpointHandler(async x =>
+                    {
+                        await _cancellationTokenSource.CancelAsync();
+                        return null;
+                    }))
+#else
                     () => new GenericEndpointHandler(x =>
                     {
                         _cancellationTokenSource.Cancel();
                         return Task.FromResult<object>(null);
                     }))
+#endif
             );
 
             return endpointHandlers;
@@ -195,6 +205,7 @@ namespace OmniSharp.Stdio
 
         private async Task HandleRequest(string json, ILogger logger)
         {
+            var startTimestamp = Stopwatch.GetTimestamp();
             var request = RequestPacket.Parse(json);
             if (logger.IsEnabled(LogLevel.Debug))
             {
@@ -243,7 +254,10 @@ namespace OmniSharp.Stdio
                         LogRequest(json, logger, LogLevel.Warning);
                     }
 
-                    LogResponse(response.ToString(), logger, response.Success);
+                    var currentTimestamp = Stopwatch.GetTimestamp();
+                    var elapsed = new TimeSpan((long)(TimestampToTicks * (currentTimestamp - startTimestamp)));
+
+                    LogResponse(response.ToString(), logger, response.Success, elapsed);
                 }
 
                 // actually write it
@@ -266,12 +280,12 @@ namespace OmniSharp.Stdio
             }
         }
 
-        void LogResponse(string json, ILogger logger, bool isSuccess)
+        void LogResponse(string json, ILogger logger, bool isSuccess, TimeSpan elapsed)
         {
             var builder = _cachedStringBuilder.Acquire();
             try
             {
-                builder.AppendLine("************  Response ************ ");
+                builder.AppendLine($"************  Response ({elapsed.TotalMilliseconds.ToString("0.0000", CultureInfo.InvariantCulture)}ms) ************ ");
                 builder.Append(JToken.Parse(json).ToString(Formatting.Indented));
 
                 if (isSuccess)

@@ -3,22 +3,23 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Options;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.VisualStudio.TestPlatform.PlatformAbstractions.Interfaces;
 using OmniSharp;
 using OmniSharp.Eventing;
 using OmniSharp.FileWatching;
-using OmniSharp.Host.Services;
-using OmniSharp.MSBuild.Discovery;
 using OmniSharp.Options;
+using OmniSharp.Roslyn.Utilities;
 using OmniSharp.Services;
 using OmniSharp.Utilities;
 using TestUtility.Logging;
-using Xunit.Abstractions;
+using Xunit;
 using ConfigurationBuilder = Microsoft.Extensions.Configuration.ConfigurationBuilder;
 
 namespace TestUtility
@@ -35,7 +36,6 @@ namespace TestUtility
             IAssemblyLoader assemblyLoader,
             IAnalyzerAssemblyLoader analyzerAssemblyLoader,
             ISharedTextWriter sharedTextWriter,
-            IMSBuildLocator msbuildLocator,
             IEventEmitter eventEmitter,
             IDotNetCliService dotNetCliService,
             IConfigurationRoot configuration)
@@ -52,7 +52,6 @@ namespace TestUtility
                 .AddSingleton(loggerFactory)
                 .AddSingleton(assemblyLoader)
                 .AddSingleton(sharedTextWriter)
-                .AddSingleton(msbuildLocator)
                 .AddSingleton(eventEmitter)
                 .AddSingleton(dotNetCliService)
                 .AddSingleton(configuration)
@@ -81,15 +80,14 @@ namespace TestUtility
             eventEmitter = eventEmitter ?? NullEventEmitter.Instance;
 
             var assemblyLoader = CreateAssemblyLoader(loggerFactory);
-            var dotNetCliService = CreateDotNetCliService(dotNetCliVersion, loggerFactory, eventEmitter);
+            var dotNetCliService = CreateDotNetCliService(dotNetCliVersion, loggerFactory, environment, eventEmitter);
             var configuration = CreateConfiguration(configurationData);
-            var msbuildLocator = CreateMSBuildLocator(loggerFactory, assemblyLoader);
             var sharedTextWriter = CreateSharedTextWriter(testOutput);
-            var analyzerAssemblyLoader = new AnalyzerAssemblyLoader();
+            var analyzerAssemblyLoader = ShadowCopyAnalyzerAssemblyLoader.CreateShadowCopyLoader();
 
             return new TestServiceProvider(
                 environment, loggerFactory, assemblyLoader, analyzerAssemblyLoader, sharedTextWriter,
-                msbuildLocator, eventEmitter, dotNetCliService, configuration);
+                eventEmitter, dotNetCliService, configuration);
         }
 
         public static IServiceProvider Create(
@@ -98,20 +96,19 @@ namespace TestUtility
             ILoggerFactory loggerFactory,
             IAssemblyLoader assemblyLoader,
             IAnalyzerAssemblyLoader analyzerAssemblyLoader,
-            IMSBuildLocator msbuildLocator,
             IConfiguration configurationData = null,
             DotNetCliVersion dotNetCliVersion = DotNetCliVersion.Current,
             IEventEmitter eventEmitter = null)
         {
             eventEmitter = eventEmitter ?? NullEventEmitter.Instance;
 
-            var dotNetCliService = CreateDotNetCliService(dotNetCliVersion, loggerFactory, eventEmitter);
+            var dotNetCliService = CreateDotNetCliService(dotNetCliVersion, loggerFactory, environment, eventEmitter);
             var configuration = CreateConfiguration(configurationData);
             var sharedTextWriter = CreateSharedTextWriter(testOutput);
 
             return new TestServiceProvider(
                 environment, loggerFactory, assemblyLoader, analyzerAssemblyLoader, sharedTextWriter,
-                msbuildLocator, eventEmitter, dotNetCliService, configuration);
+                eventEmitter, dotNetCliService, configuration);
         }
 
         private static IAssemblyLoader CreateAssemblyLoader(ILoggerFactory loggerFactory)
@@ -126,47 +123,29 @@ namespace TestUtility
                 builder.AddConfiguration(configurationData);
             }
 
-            // We need to set the "UseLegacySdkResolver" for tests because
-            // MSBuild's SDK resolver will not be able to locate the .NET Core SDKs
-            // that we install locally in the ".dotnet" directory.
-            // This property will cause the MSBuild project loader to set the
-            // MSBuildSDKsPath environment variable to the correct path "Sdks" folder
-            // within the appropriate .NET Core SDK.
-            var msbuildProperties = new Dictionary<string, string>()
-            {
-                [$"MSBuild:{nameof(MSBuildOptions.UseLegacySdkResolver)}"] = "true"
-            };
-
-            builder.AddInMemoryCollection(msbuildProperties);
-
             return builder.Build();
         }
 
-        private static IDotNetCliService CreateDotNetCliService(DotNetCliVersion dotNetCliVersion,
-            ILoggerFactory loggerFactory, IEventEmitter eventEmitter)
+        private static IDotNetCliService CreateDotNetCliService(
+            DotNetCliVersion dotNetCliVersion,
+            ILoggerFactory loggerFactory,
+            IOmniSharpEnvironment environment,
+            IEventEmitter eventEmitter)
         {
             var dotnetPath = Path.Combine(
                 TestAssets.Instance.RootFolder,
-                dotNetCliVersion.GetFolderName(),
-                "dotnet");
+                dotNetCliVersion.GetFolderName());
 
-            if (!File.Exists(dotnetPath))
-            {
-                dotnetPath = Path.ChangeExtension(dotnetPath, ".exe");
-            }
+            var options = new DotNetCliOptions { LocationPaths = new[] { dotnetPath } };
 
-            if (!File.Exists(dotnetPath))
+            if (!Directory.Exists(dotnetPath))
             {
                 throw new InvalidOperationException(
                     $"Local .NET CLI path does not exist. Did you run build.(ps1|sh) from the command line?");
             }
 
-            return new DotNetCliService(loggerFactory, NullEventEmitter.Instance, dotnetPath);
+            return new DotNetCliService(loggerFactory, NullEventEmitter.Instance, Options.Create(options), environment);
         }
-
-        private static IMSBuildLocator CreateMSBuildLocator(ILoggerFactory loggerFactory,
-            IAssemblyLoader assemblyLoader)
-            => MSBuildLocator.CreateStandAlone(loggerFactory, assemblyLoader);
 
         private static ISharedTextWriter CreateSharedTextWriter(ITestOutputHelper testOutput)
             => new TestSharedTextWriter(testOutput);

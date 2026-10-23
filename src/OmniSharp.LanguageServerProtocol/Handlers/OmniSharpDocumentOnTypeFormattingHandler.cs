@@ -9,6 +9,7 @@ using OmniSharp.Extensions.LanguageServer.Protocol.Document;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.Extensions.LanguageServer.Protocol.Server;
 using OmniSharp.Models.Format;
+using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
 namespace OmniSharp.LanguageServerProtocol.Handlers
 {
@@ -23,9 +24,9 @@ namespace OmniSharp.LanguageServerProtocol.Handlers
         }
 
         private readonly Mef.IRequestHandler<FormatAfterKeystrokeRequest, FormatRangeResponse> _formatAfterKeystrokeHandler;
-        private readonly DocumentSelector _documentSelector;
+        private readonly TextDocumentSelector _documentSelector;
 
-        public OmniSharpDocumentOnTypeFormattingHandler(Mef.IRequestHandler<FormatAfterKeystrokeRequest, FormatRangeResponse> formatAfterKeystrokeHandler, DocumentSelector documentSelector)
+        public OmniSharpDocumentOnTypeFormattingHandler(Mef.IRequestHandler<FormatAfterKeystrokeRequest, FormatRangeResponse> formatAfterKeystrokeHandler, TextDocumentSelector documentSelector)
         {
             _formatAfterKeystrokeHandler = formatAfterKeystrokeHandler;
             _documentSelector = documentSelector;
@@ -55,9 +56,9 @@ namespace OmniSharp.LanguageServerProtocol.Handlers
             return new DocumentOnTypeFormattingRegistrationOptions()
             {
                 DocumentSelector = _documentSelector,
-                FirstTriggerCharacter = ";",
-                // TODO: What should these be?
-                MoreTriggerCharacter = new[] {"}", ")"}
+                // Chose these triggers based on Roslyn's implementation https://github.com/dotnet/roslyn/blob/9e06c76c5ce94dc49821c5bd211c8292b3a984f0/src/Features/LanguageServer/Protocol/DefaultCapabilitiesProvider.cs#L71
+                FirstTriggerCharacter = "}",
+                MoreTriggerCharacter = new[] { ";", "\n" }
             };
         }
     }

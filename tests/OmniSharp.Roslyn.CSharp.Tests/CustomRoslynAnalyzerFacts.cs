@@ -7,11 +7,8 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using OmniSharp.Models.Diagnostics;
-using OmniSharp.MSBuild;
-using OmniSharp.Roslyn.CSharp.Services.Diagnostics;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -44,7 +41,9 @@ namespace OmniSharp.Roslyn.CSharp.Tests
         }
 
         [DiagnosticAnalyzer(LanguageNames.CSharp)]
+#pragma warning disable RS1036 // Specify analyzer banned API enforcement setting
         public class TestDiagnosticAnalyzer : DiagnosticAnalyzer
+#pragma warning restore RS1036 // Specify analyzer banned API enforcement setting
         {
             public TestDiagnosticAnalyzer(string id, bool isEnabledByDefault)
             {
@@ -106,7 +105,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
                 var testAnalyzerRef = new TestAnalyzerReference("TS1100");
 
-                var projectIds = AddProjectWitFile(host, testFile, testAnalyzerRef);
+                var projectIds = AddProjectWithFile(host, testFile, testAnalyzerRef);
 
                 var result = await host.RequestCodeCheckAsync("testFile_66.cs");
 
@@ -114,10 +113,10 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             }
         }
 
-        private OmniSharpTestHost GetHost()
+        private OmniSharpTestHost GetHost(bool analyzeOpenDocumentsOnly = false)
         {
             return OmniSharpTestHost.Create(testOutput: _testOutput,
-                configurationData: TestHelpers.GetConfigurationDataWithAnalyzerConfig(roslynAnalyzersEnabled: true));
+                configurationData: TestHelpers.GetConfigurationDataWithAnalyzerConfig(roslynAnalyzersEnabled: true, analyzeOpenDocumentsOnly: analyzeOpenDocumentsOnly));
         }
 
         [Fact]
@@ -127,7 +126,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             {
                 var testFile = new TestFile("testFile_1.cs", "class SomeClass { int n = true; }");
 
-                AddProjectWitFile(host, testFile);
+                AddProjectWithFile(host, testFile);
 
                 var result = await host.RequestCodeCheckAsync(testFile.FileName);
 
@@ -150,7 +149,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
                         }
                     }");
 
-                var projectId = AddProjectWitFile(host, testFile);
+                var projectId = AddProjectWithFile(host, testFile);
                 var testRules = CreateRules("CS0162", ReportDiagnostic.Hidden);
 
                 host.Workspace.UpdateDiagnosticOptionsForProject(projectId, testRules.ToImmutableDictionary());
@@ -170,7 +169,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
                 var testAnalyzerRef = new TestAnalyzerReference("TS1100");
 
-                var projectId = AddProjectWitFile(host, testFile, testAnalyzerRef);
+                var projectId = AddProjectWithFile(host, testFile, testAnalyzerRef);
                 var testRules = CreateRules(testAnalyzerRef.Id.ToString(), ReportDiagnostic.Hidden);
 
                 host.Workspace.UpdateDiagnosticOptionsForProject(projectId, testRules.ToImmutableDictionary());
@@ -200,7 +199,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
                 var testAnalyzerRef = new TestAnalyzerReference("TS1101");
 
-                var projectId = AddProjectWitFile(host, testFile, testAnalyzerRef);
+                var projectId = AddProjectWithFile(host, testFile, testAnalyzerRef);
 
                 var testRules = CreateRules(testAnalyzerRef.Id.ToString(), ReportDiagnostic.Suppress);
 
@@ -211,7 +210,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             }
         }
 
-        [Fact]
+        [Fact(Skip = "https://github.com/dotnet/roslyn/issues/66085")]
         public async Task When_diagnostic_is_disabled_by_default_updating_rule_will_enable_it()
         {
             using (var host = GetHost())
@@ -220,7 +219,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
                 var testAnalyzerRef = new TestAnalyzerReference("TS1101", isEnabledByDefault: false);
 
-                var projectId = AddProjectWitFile(host, testFile, testAnalyzerRef);
+                var projectId = AddProjectWithFile(host, testFile, testAnalyzerRef);
 
                 var testRules = CreateRules(testAnalyzerRef.Id.ToString(), ReportDiagnostic.Error);
 
@@ -240,7 +239,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
                 var testAnalyzerRef = new TestAnalyzerReference("TS1101", isEnabledByDefault: false);
 
-                var projectId = AddProjectWitFile(host, testFile, testAnalyzerRef);
+                var projectId = AddProjectWithFile(host, testFile, testAnalyzerRef);
                 var testRulesOriginal = CreateRules(testAnalyzerRef.Id.ToString(), ReportDiagnostic.Error);
                 host.Workspace.UpdateDiagnosticOptionsForProject(projectId, testRulesOriginal.ToImmutableDictionary());
                 await host.RequestCodeCheckAsync("testFile_4.cs");
@@ -248,7 +247,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
                 var testRulesUpdated = CreateRules(testAnalyzerRef.Id.ToString(), ReportDiagnostic.Suppress);
 
                 var workspaceUpdatedCheck = new AutoResetEvent(false);
-                host.Workspace.WorkspaceChanged += (_, e) => { if (e.Kind == WorkspaceChangeKind.ProjectChanged) { workspaceUpdatedCheck.Set(); } };
+                host.Workspace.RegisterWorkspaceChangedHandler((e) => { if (e.Kind == WorkspaceChangeKind.ProjectChanged) { workspaceUpdatedCheck.Set(); } });
                 host.Workspace.UpdateDiagnosticOptionsForProject(projectId, testRulesUpdated.ToImmutableDictionary());
 
                 Assert.True(workspaceUpdatedCheck.WaitOne(timeout: TimeSpan.FromSeconds(15)));
@@ -258,7 +257,42 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             }
         }
 
-        private ProjectId AddProjectWitFile(OmniSharpTestHost host, TestFile testFile, TestAnalyzerReference testAnalyzerRef = null)
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(false, true)]
+        [InlineData(true, false)]
+        [InlineData(true, true)]
+        public async Task WhenDocumentIsntOpenAndAnalyzeOpenDocumentsOnlyIsSet_DontAnalyzeFiles(bool analyzeOpenDocumentsOnly, bool isDocumentOpen)
+        {
+            using (var host = GetHost(analyzeOpenDocumentsOnly))
+            {
+                var testFile = new TestFile("testFile.cs", "class _this_is_invalid_test_class_name { int n = true; }");
+                var testAnalyzerRef = new TestAnalyzerReference("TS1100");
+
+                AddProjectWithFile(host, testFile, testAnalyzerRef);
+
+                if (isDocumentOpen)
+                {
+                    var doc = host.Workspace.GetDocument("testFile.cs");
+
+                    host.Workspace.OpenDocument(doc.Id);
+                }
+
+                var expectedDiagnosticCount = analyzeOpenDocumentsOnly && !isDocumentOpen ? 1 : 2;
+
+                var result = await host.RequestCodeCheckAsync("testFile.cs");
+
+                if (analyzeOpenDocumentsOnly && !isDocumentOpen)
+                    Assert.DoesNotContain(result.QuickFixes.OfType<DiagnosticLocation>(), f => f.Id == testAnalyzerRef.Id.ToString());
+                else
+                    Assert.Contains(result.QuickFixes.OfType<DiagnosticLocation>(), f => f.Id == testAnalyzerRef.Id.ToString());
+
+                Assert.Contains(result.QuickFixes.OfType<DiagnosticLocation>(), f => f.Id == "CS0029");
+            }
+        }
+
+        private ProjectId AddProjectWithFile(OmniSharpTestHost host, TestFile testFile, TestAnalyzerReference testAnalyzerRef = null)
         {
             var analyzerReferences = testAnalyzerRef == null ? default :
                 new AnalyzerReference[] { testAnalyzerRef }.ToImmutableArray();
@@ -266,7 +300,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             return TestHelpers.AddProjectToWorkspace(
                             host.Workspace,
                             "project.csproj",
-                            new[] { "netcoreapp3.1" },
+                            new[] { "net8.0" },
                             new[] { testFile },
                             analyzerRefs: analyzerReferences)
                     .Single();

@@ -9,8 +9,11 @@ using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using OmniSharp.Roslyn.Utilities;
+using OmniSharp.Roslyn.RoslynInternals.CodeActions;
 using Microsoft.CodeAnalysis.Text;
 using OmniSharp.Models;
+using OmniSharp.Options;
 using OmniSharp.Roslyn.CSharp.Services.CodeActions;
 using OmniSharp.Services;
 
@@ -27,8 +30,9 @@ namespace OmniSharp
         private readonly IEnumerable<ICodeActionProvider> _providers;
         private readonly CodeFixProvider _addImportProvider;
         private readonly CodeFixProvider _removeUnnecessaryUsingsProvider;
+        private readonly OmniSharpOptions _options;
 
-        public FixUsingsWorker(IEnumerable<ICodeActionProvider> providers)
+        public FixUsingsWorker(IEnumerable<ICodeActionProvider> providers, OmniSharpOptions options)
         {
             _providers = providers;
 
@@ -36,6 +40,7 @@ namespace OmniSharp
 
             _addImportProvider = FindCodeFixProviderByTypeFullName(codeFixProviders, CodeActionHelper.AddImportProviderName);
             _removeUnnecessaryUsingsProvider = FindCodeFixProviderByTypeFullName(codeFixProviders, CodeActionHelper.RemoveUnnecessaryUsingsProviderName);
+            _options = options;
         }
 
         private static CodeFixProvider FindCodeFixProviderByTypeFullName(IEnumerable<CodeFixProvider> providers, string fullName)
@@ -238,7 +243,7 @@ namespace OmniSharp
             ImmutableArray<Diagnostic> diagnostics)
         {
             var codeFixes = new List<CodeAction>();
-            var context = new CodeFixContext(
+            var context = RoslynCodeActionContextFactory.CreateCodeFixContext(
                 document, span, diagnostics,
                 registerCodeFix: (a, d) => codeFixes.Add(a),
                 cancellationToken: CancellationToken.None);

@@ -11,7 +11,6 @@ using OmniSharp.Models.UpdateBuffer;
 using OmniSharp.Models.v1.Completion;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Cake.Tests
 {
@@ -21,7 +20,7 @@ namespace OmniSharp.Cake.Tests
 
         public QuickInfoFacts(ITestOutputHelper testOutput) : base(testOutput)
         {
-            _logger = LoggerFactory.CreateLogger<AutoCompleteFacts>();
+            _logger = LoggerFactory.CreateLogger<QuickInfoFacts>();
         }
 
         protected override string EndpointName => OmniSharpEndpoints.QuickInfo;

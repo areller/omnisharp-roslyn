@@ -6,7 +6,6 @@ using OmniSharp.Models.UpdateBuffer;
 using OmniSharp.Models.V2;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Cake.Tests
 {
@@ -38,7 +37,9 @@ namespace OmniSharp.Cake.Tests
                 .ToArray();
 
             var expected = testFile.Content.GetSpans()
-                .Select(span => testFile.Content.GetRangeFromSpan(span).ToRange()).ToArray();
+                .Select(span => testFile.Content.GetRangeFromSpan(span).ToRange())
+                .Reverse()
+                .ToArray();
 
             Assert.Equal(expected, lineSpans);
         }

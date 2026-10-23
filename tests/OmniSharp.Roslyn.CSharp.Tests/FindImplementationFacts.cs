@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -9,7 +10,6 @@ using OmniSharp.Models.FindImplementations;
 using OmniSharp.Roslyn.CSharp.Services.Navigation;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -212,7 +212,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             var symbols = new List<ISymbol>();
             foreach (var quickfix in quickFixes)
             {
-                var document = workspace.GetDocument(quickfix.FileName);
+                var document = workspace.GetDocument(Path.GetFileName(quickfix.FileName));
                 var sourceText = await document.GetTextAsync();
                 var position = sourceText.Lines.GetPosition(new LinePosition(quickfix.Line, quickfix.Column));
                 var semanticModel = await document.GetSemanticModelAsync();

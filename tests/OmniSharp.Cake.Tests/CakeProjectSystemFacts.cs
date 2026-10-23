@@ -10,7 +10,6 @@ using OmniSharp.Models.WorkspaceInformation;
 using OmniSharp.Roslyn.CSharp.Services.Files;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Cake.Tests
 {
@@ -24,7 +23,7 @@ namespace OmniSharp.Cake.Tests
         [Fact]
         public async Task ShouldGetProjects()
         {
-            using (var testProject = await TestAssets.Instance.GetTestProjectAsync("CakeProject", shadowCopy : false))
+            using (var testProject = await TestAssets.Instance.GetTestProjectAsync("CakeProject", shadowCopy: false))
             using (var host = CreateOmniSharpHost(testProject.Directory))
             {
                 var workspaceInfo = await GetWorkspaceInfoAsync(host);
@@ -39,7 +38,7 @@ namespace OmniSharp.Cake.Tests
         [Fact]
         public async Task ShouldAddAndRemoveProjects()
         {
-            using (var testProject = await TestAssets.Instance.GetTestProjectAsync("CakeProject", shadowCopy : false))
+            using (var testProject = await TestAssets.Instance.GetTestProjectAsync("CakeProject", shadowCopy: false))
             using (var host = CreateOmniSharpHost(testProject.Directory))
             {
                 var tempFile = Path.Combine(testProject.Directory, "temp.cake");
@@ -104,16 +103,18 @@ namespace OmniSharp.Cake.Tests
 
         private static async Task AddFile(OmniSharpTestHost host, string filePath)
         {
+#pragma warning disable VSTHRD103 // Dispose synchronously blocks. Await DisposeAsync instead.
             File.Create(filePath).Dispose();
+#pragma warning restore VSTHRD103
             var service = host.GetRequestHandler<OnFilesChangedService>(OmniSharpEndpoints.FilesChanged);
-            await service.Handle(new[] { new FilesChangedRequest { FileName = filePath, ChangeType = FileChangeType.Create }});
+            await service.Handle(new[] { new FilesChangedRequest { FileName = filePath, ChangeType = FileChangeType.Create } });
         }
 
         private static async Task RemoveFile(OmniSharpTestHost host, string filePath)
         {
             File.Delete(filePath);
             var service = host.GetRequestHandler<OnFilesChangedService>(OmniSharpEndpoints.FilesChanged);
-            await service.Handle(new[] { new FilesChangedRequest { FileName = filePath, ChangeType = FileChangeType.Delete }});
+            await service.Handle(new[] { new FilesChangedRequest { FileName = filePath, ChangeType = FileChangeType.Delete } });
         }
     }
 }

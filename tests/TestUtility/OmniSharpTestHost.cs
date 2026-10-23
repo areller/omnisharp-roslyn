@@ -12,7 +12,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OmniSharp;
-using OmniSharp.Cake;
 using OmniSharp.DotNetTest.Models;
 using OmniSharp.Eventing;
 using OmniSharp.LanguageServerProtocol;
@@ -23,7 +22,7 @@ using OmniSharp.Roslyn.CSharp.Services;
 using OmniSharp.Script;
 using OmniSharp.Services;
 using OmniSharp.Utilities;
-using Xunit.Abstractions;
+using Xunit;
 
 namespace TestUtility
 {
@@ -38,7 +37,7 @@ namespace TestUtility
             typeof(ScriptProjectSystem).GetTypeInfo().Assembly, // OmniSharp.Script
             typeof(OmniSharpWorkspace).GetTypeInfo().Assembly, // OmniSharp.Roslyn
             typeof(RoslynFeaturesHostServicesProvider).GetTypeInfo().Assembly, // OmniSharp.Roslyn.CSharp
-            typeof(CakeProjectSystem).GetTypeInfo().Assembly, // OmniSharp.Cake
+            typeof(OmniSharp.Cake.CakeProjectSystem).GetTypeInfo().Assembly, // OmniSharp.Cake
             typeof(LanguageServerHost).Assembly, // OmniSharp.LanguageServerProtocol
         });
 
@@ -144,7 +143,10 @@ namespace TestUtility
                 Workspace,
                 Path.Combine(folderPath, "project.csproj"),
                 new[] { "net472" },
-                testFiles.Where(f => f.FileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).ToArray());
+                testFiles.Where(f => f.FileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).ToArray(),
+                testFiles.Where(f => !f.FileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                    && !f.FileName.EndsWith(".csx", StringComparison.OrdinalIgnoreCase)
+                    && !f.FileName.EndsWith(".cake", StringComparison.OrdinalIgnoreCase)).ToArray());
 
             foreach (var csxFile in testFiles.Where(f => f.FileName.EndsWith(".csx", StringComparison.OrdinalIgnoreCase)))
             {
@@ -161,6 +163,10 @@ namespace TestUtility
             {
                 Workspace.RemoveProject(projectId);
             }
+
+            // The fallback AnalyzerConfigOptions seem to be reset when all the Projects are removed from the Workspace.
+            // Calling initialize again here will set them so that they are available.
+            WorkspaceInitializer.Initialize(_serviceProvider, _compositionHost);
         }
 
         public Task<TResponse> GetResponse<TRequest, TResponse>(

@@ -1,9 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Composition.Hosting.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using TestUtility.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace TestUtility
 {
@@ -14,7 +15,6 @@ namespace TestUtility
 
         protected OmniSharpTestHost SharedOmniSharpTestHost { get; }
 
-
         protected AbstractTestFixture(ITestOutputHelper output)
         {
             TestOutput = output;
@@ -24,9 +24,9 @@ namespace TestUtility
 
         protected AbstractTestFixture(ITestOutputHelper output, SharedOmniSharpHostFixture sharedOmniSharpHostFixture)
         {
-            TestOutput = output;
+            TestOutput = sharedOmniSharpHostFixture.SetTestOutput(output);
             LoggerFactory = new LoggerFactory()
-                .AddXunit(output);
+                .AddXunit(TestOutput);
 
             if (sharedOmniSharpHostFixture.OmniSharpTestHost == null)
             {
@@ -45,6 +45,7 @@ namespace TestUtility
         protected OmniSharpTestHost CreateEmptyOmniSharpHost()
         {
             var host = OmniSharpTestHost.Create(path: null, testOutput: this.TestOutput);
+
             host.AddFilesToWorkspace();
             return host;
         }

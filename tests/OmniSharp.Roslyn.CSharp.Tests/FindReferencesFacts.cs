@@ -1,12 +1,17 @@
 ﻿using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
 using OmniSharp.Models;
 using OmniSharp.Models.FindUsages;
+using OmniSharp.Models.v1.SourceGeneratedFile;
 using OmniSharp.Roslyn.CSharp.Services.Navigation;
+using Roslyn.Test.Utilities;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -132,7 +137,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
                 {
                     public FooConsumer()
                     {
-#line " + mappingLine+ @"
+#line " + mappingLine + @"
                         new Foo().bar();
 #line default
                     }
@@ -145,14 +150,14 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             var regularResult = quickFixes.ElementAt(0);
             var mappedResult = quickFixes.ElementAt(1);
 
-            Assert.Equal("dummy.cs", regularResult.FileName);
-            Assert.Equal("dummy.cs", mappedResult.FileName);
+            Assert.EndsWith("dummy.cs", regularResult.FileName);
+            Assert.EndsWith("dummy.cs", mappedResult.FileName);
 
             Assert.Equal("public void bar() { }", regularResult.Text);
             Assert.Equal(expectedMappingText, mappedResult.Text);
 
             Assert.Equal(3, regularResult.Line);
-            Assert.Equal(mappingLine-1, mappedResult.Line);
+            Assert.Equal(mappingLine - 1, mappedResult.Line);
 
             // regular result has regular postition
             Assert.Equal(32, regularResult.Column);
@@ -186,7 +191,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 #line default
                     }
                 }"),
-                
+
             };
 
             if (mappedFileExistsInWorkspace)
@@ -201,11 +206,11 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             var regularResult = usages.QuickFixes.ElementAt(0);
             var mappedResult = usages.QuickFixes.ElementAt(1);
 
-            Assert.Equal("a.cs", regularResult.FileName);
-            Assert.Equal("b.cs", mappedResult.FileName);
+            Assert.EndsWith("a.cs", regularResult.FileName);
+            Assert.EndsWith("b.cs", mappedResult.FileName);
 
             Assert.Equal(3, regularResult.Line);
-            Assert.Equal(mappingLine-1, mappedResult.Line);
+            Assert.Equal(mappingLine - 1, mappedResult.Line);
 
             Assert.Equal("public void bar() { }", regularResult.Text);
             Assert.Equal(expectedMappingText, mappedResult.Text);
@@ -251,8 +256,8 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             var regularResult = usages.QuickFixes.ElementAt(0);
             var mappedResult = usages.QuickFixes.ElementAt(1);
 
-            Assert.Equal("a.cs", regularResult.FileName);
-            Assert.Equal("a.cs", mappedResult.FileName);
+            Assert.EndsWith("a.cs", regularResult.FileName);
+            Assert.EndsWith("a.cs", mappedResult.FileName);
 
             Assert.Equal(3, regularResult.Line);
             Assert.Equal(11, mappedResult.Line);
@@ -407,14 +412,98 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
             var usages = await FindUsagesAsync(testFiles, onlyThisFile: false);
             Assert.Equal(3, usages.QuickFixes.Count());
-            Assert.Equal("a.cs", usages.QuickFixes.ElementAt(0).FileName);
-            Assert.Equal("a.cs", usages.QuickFixes.ElementAt(1).FileName);
-            Assert.Equal("b.cs", usages.QuickFixes.ElementAt(2).FileName);
+            Assert.EndsWith("a.cs", usages.QuickFixes.ElementAt(0).FileName);
+            Assert.EndsWith("a.cs", usages.QuickFixes.ElementAt(1).FileName);
+            Assert.EndsWith("b.cs", usages.QuickFixes.ElementAt(2).FileName);
 
             usages = await FindUsagesAsync(testFiles, onlyThisFile: true);
             Assert.Equal(2, usages.QuickFixes.Count());
-            Assert.Equal("a.cs", usages.QuickFixes.ElementAt(0).FileName);
-            Assert.Equal("a.cs", usages.QuickFixes.ElementAt(1).FileName);
+            Assert.EndsWith("a.cs", usages.QuickFixes.ElementAt(0).FileName);
+            Assert.EndsWith("a.cs", usages.QuickFixes.ElementAt(1).FileName);
+        }
+
+        [Fact]
+        public async Task MappedLocationFileNameProperlyRootedInAdditionalDocuments()
+        {
+            var folderPath = Directory.GetCurrentDirectory();
+            var relativeFile = ".\\Index.cshtml";
+            var mappedFilePath = Path.GetFullPath(Path.Combine(folderPath, relativeFile));
+
+            var testFiles = new[]
+            {
+                new TestFile("Constants.cs", @"
+                    public static class Constants
+                    {
+                        public const string My$$Text = ""Hello World"";
+                    }"),
+                new TestFile("Index.cshtml.cs", @"
+                    using Microsoft.AspNetCore.Mvc.RazorPages;
+
+                    public class IndexModel : PageModel
+                    {
+                        public IndexModel()
+                        {
+                        }
+
+                        public void OnGet()
+                        {
+
+                        }
+                    }"),
+                new TestFile("Index.cshtml_virtual.cs", $@"
+                    #line 1 ""{relativeFile}""
+                    Constants.MyText
+                    #line default
+                    #line hidden"),
+                new TestFile(mappedFilePath, "<p>@Constants.MyText</p>")
+            };
+
+            var usages = await FindUsagesAsync(testFiles, onlyThisFile: false, folderPath: folderPath);
+
+            Assert.DoesNotContain(usages.QuickFixes, location => location.FileName.EndsWith("Index.cshtml_virtual.cs"));
+            Assert.DoesNotContain(usages.QuickFixes, location => location.FileName.Equals(relativeFile));
+
+            var quickFix = Assert.Single(usages.QuickFixes, location => location.FileName.Equals(mappedFilePath));
+            Assert.Empty(quickFix.Projects);
+        }
+
+        [Fact]
+        public async Task MappedLocationFileNameProperlyRootedInMiscellaneousWorkspace()
+        {
+            var folderPath = Directory.GetCurrentDirectory();
+            var relativeFile = ".\\Index.cshtml.cs";
+            var mappedFilePath = Path.GetFullPath(Path.Combine(folderPath, relativeFile));
+
+            var testFiles = new[]
+            {
+                new TestFile("Constants.cs", @"
+                    public static class Constants
+                    {
+                        public const string My$$Text = ""Hello World"";
+                    }"),
+                new TestFile("Index.cshtml_virtual.cs", $@"
+                    #line 1 ""{relativeFile}""
+                    Constants.MyText
+                    #line default
+                    #line hidden")
+            };
+
+            var miscFile = new TestFile(mappedFilePath, "// Constants.MyText;");
+
+            SharedOmniSharpTestHost.AddFilesToWorkspace(folderPath, testFiles);
+            SharedOmniSharpTestHost.Workspace.TryAddMiscellaneousDocument(
+                miscFile.FileName,
+                TextLoader.From(TextAndVersion.Create(miscFile.Content.Text, VersionStamp.Create())),
+                LanguageNames.CSharp);
+
+            var testFile = testFiles.Single(tf => tf.Content.HasPosition);
+            var usages = await FindUsagesAsync(testFile, onlyThisFile: false);
+
+            Assert.DoesNotContain(usages.QuickFixes, location => location.FileName.EndsWith("Index.cshtml_virtual.cs"));
+            Assert.DoesNotContain(usages.QuickFixes, location => location.FileName.Equals(relativeFile));
+
+            var quickFix = Assert.Single(usages.QuickFixes, location => location.FileName.Equals(mappedFilePath));
+            Assert.Empty(quickFix.Projects);
         }
 
         [Fact]
@@ -434,7 +523,7 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
             var usages = await FindUsagesAsync(testFiles, onlyThisFile: true);
             Assert.Single(usages.QuickFixes);
-            Assert.Equal("a.cs", usages.QuickFixes.ElementAt(0).FileName);
+            Assert.EndsWith("a.cs", usages.QuickFixes.ElementAt(0).FileName);
         }
 
         [Theory]
@@ -449,14 +538,57 @@ namespace OmniSharp.Roslyn.CSharp.Tests
                     {{
                     }}
                 }}";
-            
-            var exception = await Record.ExceptionAsync(async () => 
+
+            var exception = await Record.ExceptionAsync(async () =>
             {
                 var usages = await FindUsagesAsync(code);
                 Assert.NotNull(usages);
             });
-            
+
             Assert.Null(exception);
+        }
+
+        [Fact(Skip = "Need Roslyn EA for the TestGeneratorReference")]
+        public async Task ReturnsGeneratedReferences()
+        {
+            const string Source = @"
+public partial class Generated
+{
+    public int Property { get; set; }
+}
+";
+            const string FileName = "real.cs";
+            var testFile = new TestFile(FileName, @"
+class C
+{
+    Generate$$d G;
+}
+");
+
+            TestHelpers.AddProjectToWorkspace(SharedOmniSharpTestHost.Workspace,
+                "project.csproj",
+                new[] { "net8.0" },
+                new[] { testFile },
+                analyzerRefs: ImmutableArray.Create<AnalyzerReference>(new TestGeneratorReference(
+                    context => context.AddSource("GeneratedFile", Source))));
+
+            var response = await FindUsagesAsync(testFile, onlyThisFile: false, excludeDefinition: false);
+
+            var result = response.QuickFixes.Cast<SymbolLocation>().Single(s => s.GeneratedFileInfo is not null);
+            Assert.NotNull(result);
+            AssertEx.Equal(@"OmniSharp.Roslyn.CSharp.Tests\OmniSharp.Roslyn.CSharp.Tests.TestSourceGenerator\GeneratedFile.cs", result.FileName.Replace("/", @"\"));
+
+            var sourceGeneratedFileHandler = SharedOmniSharpTestHost.GetRequestHandler<SourceGeneratedFileService>(OmniSharpEndpoints.SourceGeneratedFile);
+            var sourceGeneratedRequest = new SourceGeneratedFileRequest
+            {
+                DocumentGuid = result.GeneratedFileInfo.DocumentGuid,
+                ProjectGuid = result.GeneratedFileInfo.ProjectGuid
+            };
+
+            var sourceGeneratedFileResponse = await sourceGeneratedFileHandler.Handle(sourceGeneratedRequest);
+            Assert.NotNull(sourceGeneratedFileResponse);
+            AssertEx.Equal(Source, sourceGeneratedFileResponse.Source);
+            AssertEx.Equal(@"OmniSharp.Roslyn.CSharp.Tests\OmniSharp.Roslyn.CSharp.Tests.TestSourceGenerator\GeneratedFile.cs", sourceGeneratedFileResponse.SourceName.Replace("/", @"\"));
         }
 
         private Task<QuickFixResponse> FindUsagesAsync(string code, bool excludeDefinition = false)
@@ -464,11 +596,16 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             return FindUsagesAsync(new[] { new TestFile("dummy.cs", code) }, false, excludeDefinition);
         }
 
-        private async Task<QuickFixResponse> FindUsagesAsync(TestFile[] testFiles, bool onlyThisFile, bool excludeDefinition = false)
+        private Task<QuickFixResponse> FindUsagesAsync(TestFile[] testFiles, bool onlyThisFile, bool excludeDefinition = false, string folderPath = null)
         {
-            SharedOmniSharpTestHost.AddFilesToWorkspace(testFiles);
-            var file = testFiles.Single(tf => tf.Content.HasPosition);
-            var point = file.Content.GetPointFromPosition();
+            SharedOmniSharpTestHost.AddFilesToWorkspace(folderPath, testFiles);
+            var testFile = testFiles.Single(tf => tf.Content.HasPosition);
+            return FindUsagesAsync(testFile, onlyThisFile, excludeDefinition);
+        }
+
+        private async Task<QuickFixResponse> FindUsagesAsync(TestFile testFile, bool onlyThisFile, bool excludeDefinition = false)
+        {
+            var point = testFile.Content.GetPointFromPosition();
 
             var requestHandler = GetRequestHandler(SharedOmniSharpTestHost);
 
@@ -476,8 +613,8 @@ namespace OmniSharp.Roslyn.CSharp.Tests
             {
                 Line = point.Line,
                 Column = point.Offset,
-                FileName = file.FileName,
-                Buffer = file.Content.Code,
+                FileName = testFile.FileName,
+                Buffer = testFile.Content.Code,
                 OnlyThisFile = onlyThisFile,
                 ExcludeDefinition = excludeDefinition
             };

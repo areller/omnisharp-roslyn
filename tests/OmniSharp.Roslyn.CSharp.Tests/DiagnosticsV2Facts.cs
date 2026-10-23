@@ -1,13 +1,12 @@
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using OmniSharp.FileSystem;
 using OmniSharp.Models.Diagnostics;
 using OmniSharp.Options;
 using OmniSharp.Roslyn.CSharp.Services.Diagnostics;
 using OmniSharp.Services;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -44,7 +43,13 @@ namespace OmniSharp.Roslyn.CSharp.Tests
 
         private CSharpDiagnosticWorkerWithAnalyzers CreateDiagnosticService(DiagnosticEventForwarder forwarder)
         {
-            return new CSharpDiagnosticWorkerWithAnalyzers(SharedOmniSharpTestHost.Workspace, Enumerable.Empty<ICodeActionProvider>(), this.LoggerFactory, forwarder, new OmniSharpOptions());
+            return new CSharpDiagnosticWorkerWithAnalyzers(
+                    SharedOmniSharpTestHost.Workspace,
+                    Enumerable.Empty<ICodeActionProvider>(),
+                    this.LoggerFactory,
+                    forwarder,
+                    new OmniSharpOptions(),
+                    new FileSystemHelper(new OmniSharpOptions(), new OmniSharpEnvironment()));
         }
 
         [Theory(Skip = "Test needs to be updated for service changes")]

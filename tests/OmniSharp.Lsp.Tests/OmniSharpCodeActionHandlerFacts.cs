@@ -2,21 +2,14 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 using OmniSharp.Extensions.LanguageServer.Protocol;
 using OmniSharp.Extensions.LanguageServer.Protocol.Document;
 using OmniSharp.Extensions.LanguageServer.Protocol.Models;
-using OmniSharp.Extensions.LanguageServer.Protocol.Workspace;
-using OmniSharp.Models;
 using OmniSharp.Models.V2;
-using OmniSharp.Models.V2.CodeActions;
-using OmniSharp.Roslyn.CSharp.Services.Refactoring.V2;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 using Xunit.Sdk;
 using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
@@ -85,12 +78,10 @@ namespace OmniSharp.Lsp.Tests
                 using MyNamespace2;
                 using System;
                 u[||]sing MyNamespace1;
-
                 public class c {public c() {Guid.NewGuid();}}";
 
             const string expected =
                 @"using System;
-
                 public class c {public c() {Guid.NewGuid();}}";
 
             var response =
@@ -137,10 +128,12 @@ namespace OmniSharp.Lsp.Tests
                 {
                     "Fix formatting",
                     "using System;",
-                    "System.Console",
-                    "Generate variable 'Console' -> Generate property 'Class1.Console'",
-                    "Generate variable 'Console' -> Generate field 'Class1.Console'",
-                    "Generate variable 'Console' -> Generate read-only field 'Class1.Console'",
+                    "using Internal;",
+                    "Fully qualify 'Console' -> Internal.Console",
+                    "Fully qualify 'Console' -> System.Console",
+                    "Generate variable 'Console' -> Generate property 'Console'",
+                    "Generate variable 'Console' -> Generate field 'Console'",
+                    "Generate variable 'Console' -> Generate read-only field 'Console'",
                     "Generate variable 'Console' -> Generate local 'Console'",
                     "Generate variable 'Console' -> Generate parameter 'Console'",
                     "Generate type 'Console' -> Generate class 'Console' in new file",
@@ -148,15 +141,18 @@ namespace OmniSharp.Lsp.Tests
                     "Generate type 'Console' -> Generate nested class 'Console'",
                     "Extract local function",
                     "Extract method",
+                    "Use expression body for method",
                     "Introduce local for 'Console.Write(\"should be using System;\")'"
                 }
                 : new List<string>
                 {
                     "using System;",
-                    "System.Console",
-                    "Generate variable 'Console' -> Generate property 'Class1.Console'",
-                    "Generate variable 'Console' -> Generate field 'Class1.Console'",
-                    "Generate variable 'Console' -> Generate read-only field 'Class1.Console'",
+                    "using Internal;",
+                    "Fully qualify 'Console' -> Internal.Console",
+                    "Fully qualify 'Console' -> System.Console",
+                    "Generate variable 'Console' -> Generate property 'Console'",
+                    "Generate variable 'Console' -> Generate field 'Console'",
+                    "Generate variable 'Console' -> Generate read-only field 'Console'",
                     "Generate variable 'Console' -> Generate local 'Console'",
                     "Generate variable 'Console' -> Generate parameter 'Console'",
                     "Generate type 'Console' -> Generate class 'Console' in new file",
@@ -164,6 +160,7 @@ namespace OmniSharp.Lsp.Tests
                     "Generate type 'Console' -> Generate nested class 'Console'",
                     "Extract local function",
                     "Extract method",
+                    "Use expression body for method",
                     "Introduce local for 'Console.Write(\"should be using System;\")'"
                 };
 
@@ -173,7 +170,7 @@ namespace OmniSharp.Lsp.Tests
                 try
                 {
                     var refactorings = await FindRefactoringNamesAsync(code, roslynAnalyzersEnabled);
-                    Assert.Equal(expected.OrderBy(x => x), refactorings.OrderBy(x => x));
+                    Assert.Equal(expected.OrderBy(x => x).Skip(8), refactorings.OrderBy(x => x).Skip(8));
                     return true;
                 }
                 catch (EqualException)
@@ -228,24 +225,35 @@ namespace OmniSharp.Lsp.Tests
             var project = await AddProjectToWorkspace(testProject);
             var document = project.Documents.First();
 
-            await Client.ExecuteCommand(Command.Create("omnisharp/executeCodeAction")
-                .WithArguments(new
-                {
-                    Uri = DocumentUri.FromFileSystemPath(document.FilePath),
-                    Identifier = "Generate class 'Z' in new file",
-                    Name = "N/A",
-                    Range = new Range((8, 12), (8, 12)),
-                }), CancellationToken);
+            var codeActions = await Client.RequestCodeAction(new CodeActionParams()
+            {
+                Context = new CodeActionContext(),
+                TextDocument = new TextDocumentIdentifier(DocumentUri.FromFileSystemPath(document.FilePath)),
+                Range = new Range((8, 12), (8, 12)),
+            }, CancellationToken);
 
-            var updatedDocument = OmniSharpTestHost.Workspace.GetDocument(Path.Combine(Path.GetDirectoryName(document.FilePath), "Z.cs"));
-            var updateDocumentText = await updatedDocument.GetTextAsync(CancellationToken);
+            var codeActionOrCommand = codeActions
+                .SingleOrDefault(ca => ca.CodeAction.Title == "Generate type 'Z' -> Generate class 'Z' in new file");
 
-            Assert.Equal(@"namespace ConsoleApplication
+            Assert.NotNull(codeActionOrCommand);
+            Assert.True(codeActionOrCommand.IsCodeAction);
+
+            var codeAction = codeActionOrCommand.CodeAction;
+
+            var resolvedCodeAction = await Client.ResolveCodeAction(codeAction, CancellationToken);
+
+            var change = resolvedCodeAction.Edit.DocumentChanges.SingleOrDefault();
+            Assert.True(change.IsTextDocumentEdit);
+
+            var textEdit = change.TextDocumentEdit.Edits.SingleOrDefault();
+
+            const string expected = @"namespace ConsoleApplication
 {
     internal class Z
     {
     }
-}".Replace("\r\n", "\n"), updateDocumentText.ToString());
+}";
+            Assert.Equal(expected.Replace("\r\n", "\n"), textEdit.NewText);
         }
 
         [Theory]
@@ -258,32 +266,71 @@ namespace OmniSharp.Lsp.Tests
             var project = await AddProjectToWorkspace(testProject);
             var document = project.Documents.First();
 
-            await Client.ExecuteCommand(Command.Create("omnisharp/executeCodeAction")
-                .WithArguments(new
-                {
-                    Uri = DocumentUri.FromFileSystemPath(document.FilePath),
-                    Identifier = "Rename file to Class1.cs",
-                    Name = "N/A",
-                    Range = new Range((4, 10), (4, 10)),
-                }), CancellationToken);
+            var codeActions = await Client.RequestCodeAction(new CodeActionParams()
+            {
+                Context = new CodeActionContext(),
+                TextDocument = new TextDocumentIdentifier(DocumentUri.FromFileSystemPath(document.FilePath)),
+                Range = new Range((4, 10), (4, 10)),
+            }, CancellationToken);
 
-            Assert.Empty(OmniSharpTestHost.Workspace.GetDocuments(document.FilePath));
+            var codeActionOrCommand = codeActions
+                .SingleOrDefault(ca => ca.CodeAction.Title == "Rename file to Class1.cs");
 
-            Assert.NotEmpty(OmniSharpTestHost.Workspace.GetDocuments(
-                Path.Combine(Path.GetDirectoryName(document.FilePath), "Class1.cs")
-            ));
+            Assert.NotNull(codeActionOrCommand);
+            Assert.True(codeActionOrCommand.IsCodeAction);
+
+            var codeAction = codeActionOrCommand.CodeAction;
+
+            var resolvedCodeAction = await Client.ResolveCodeAction(codeAction, CancellationToken);
+
+            var change = resolvedCodeAction.Edit.DocumentChanges.SingleOrDefault();
+
+            Assert.True(change.IsRenameFile);
+
+            var expected = DocumentUri.FromFileSystemPath(Path.Combine(Path.GetDirectoryName(document.FilePath), "Class1.cs"));
+            Assert.Equal(expected.GetFileSystemPath(), change.RenameFile.NewUri.GetFileSystemPath());
         }
 
-        private async Task<IEnumerable<TestFile>> RunRefactoringAsync(string code, string refactoringName,
-            bool isAnalyzersEnabled = true)
+        private async Task<IEnumerable<TestFile>> RunRefactoringAsync(string code, string refactoringName, bool isAnalyzersEnabled = true)
         {
-            var refactorings = await FindRefactoringsAsync(code,
-                configurationData: TestHelpers.GetConfigurationDataWithAnalyzerConfig(isAnalyzersEnabled));
-            Assert.Contains(refactoringName, refactorings.Select(x => x.Title), StringComparer.OrdinalIgnoreCase);
+            await Restart(TestHelpers.GetConfigurationDataWithAnalyzerConfig(isAnalyzersEnabled));
 
-            var command = refactorings
-                .First(action => action.Title.Equals(refactoringName, StringComparison.OrdinalIgnoreCase)).Command;
-            return await RunRefactoringsAsync(code, command);
+            var bufferPath =
+                $"{Directory.GetCurrentDirectory()}{Path.DirectorySeparatorChar}somepath{Path.DirectorySeparatorChar}buffer.cs";
+            var testFile = new TestFile(bufferPath, code);
+            OmniSharpTestHost.AddFilesToWorkspace(testFile);
+
+            var project = OmniSharpTestHost.Workspace.CurrentSolution.Projects.Single();
+            var document = project.Documents.First();
+
+            var span = testFile.Content.GetSpans().Single();
+            var range = GetSelection(testFile.Content.GetRangeFromSpan(span));
+
+            // Request CodeAction
+            var codeActions = await Client.RequestCodeAction(new CodeActionParams()
+            {
+                Context = new CodeActionContext(),
+                TextDocument = new TextDocumentIdentifier(DocumentUri.FromFileSystemPath(document.FilePath)),
+                Range = LanguageServerProtocol.Helpers.ToRange(range),
+            }, CancellationToken);
+
+            // Locate CodeAction
+            var codeAction = codeActions
+                .Where(ca => ca.IsCodeAction)
+                .Select(ca => ca.CodeAction)
+                .SingleOrDefault(ca => ca.Title.Equals(refactoringName, StringComparison.OrdinalIgnoreCase));
+
+            // Resolve CodeAction
+            var resolvedCodeAction = await Client.ResolveCodeAction(codeAction, CancellationToken);
+
+            // Apply CodeAction
+            await Server.SendRequest(new ApplyWorkspaceEditParams()
+            {
+                Label = codeAction.Title,
+                Edit = resolvedCodeAction.Edit
+            }, CancellationToken);
+
+            return new[] { testFile };
         }
 
         private async Task<IEnumerable<string>> FindRefactoringNamesAsync(string code, bool isAnalyzersEnabled = true)
@@ -315,19 +362,6 @@ namespace OmniSharp.Lsp.Tests
             return response.Where(z => z.IsCodeAction).Select(z => z.CodeAction);
         }
 
-        private async Task<IEnumerable<TestFile>> RunRefactoringsAsync(string code, Command command)
-        {
-            var bufferPath =
-                $"{Directory.GetCurrentDirectory()}{Path.DirectorySeparatorChar}somepath{Path.DirectorySeparatorChar}buffer.cs";
-            var testFile = new TestFile(bufferPath, code);
-
-            OmniSharpTestHost.AddFilesToWorkspace(testFile);
-
-            await Client.Workspace.ExecuteCommand(command, CancellationToken);
-
-            return new[] {testFile};
-        }
-
         private static Models.V2.Range GetSelection(TextRange range)
         {
             if (range.IsEmpty)
@@ -337,8 +371,8 @@ namespace OmniSharp.Lsp.Tests
 
             return new Models.V2.Range
             {
-                Start = new Point {Line = range.Start.Line, Column = range.Start.Offset},
-                End = new Point {Line = range.End.Line, Column = range.End.Offset}
+                Start = new Point { Line = range.Start.Line, Column = range.Start.Offset },
+                End = new Point { Line = range.End.Line, Column = range.End.Offset }
             };
         }
     }

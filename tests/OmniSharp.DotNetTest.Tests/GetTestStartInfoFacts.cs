@@ -4,7 +4,6 @@ using OmniSharp.Utilities;
 using System.Threading.Tasks;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.DotNetTest.Tests
 {
@@ -23,7 +22,7 @@ namespace OmniSharp.DotNetTest.Tests
                 XunitTestProject,
                 methodName: "Main.Test.MainTest.Test",
                 testFramework: "xunit",
-                targetFrameworkVersion: ".NETCoreApp,Version=v3.1",
+                targetFrameworkVersion: ".NETCoreApp,Version=v8.0",
                 assert: AssertCorrectness);
         }
 
@@ -34,7 +33,7 @@ namespace OmniSharp.DotNetTest.Tests
                 NUnitTestProject,
                 methodName: "Main.Test.MainTest.Test",
                 testFramework: "nunit",
-                targetFrameworkVersion: ".NETCoreApp,Version=v3.1",
+                targetFrameworkVersion: ".NETCoreApp,Version=v8.0",
                 assert: AssertCorrectness);
         }
 
@@ -45,7 +44,7 @@ namespace OmniSharp.DotNetTest.Tests
                 MSTestProject,
                 methodName: "Main.Test.MainTest.Test",
                 testFramework: "mstest",
-                targetFrameworkVersion: ".NETCoreApp,Version=v3.1",
+                targetFrameworkVersion: ".NETCoreApp,Version=v8.0",
                 assert: AssertCorrectness);
         }
 

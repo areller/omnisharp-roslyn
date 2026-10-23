@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using OmniSharp.Mef;
@@ -8,7 +9,6 @@ using OmniSharp.Roslyn.CSharp.Services.Structure;
 using OmniSharp.Services;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -54,6 +54,33 @@ namespace N
     interface I { }
     struct S { }
 }
+";
+
+            var response = await GetCodeStructureAsync(source);
+
+            var elementN = Assert.Single(response.Elements);
+            AssertElement(elementN, SymbolKinds.Namespace, "N", "N");
+
+            var children = elementN.Children;
+            Assert.Equal(5, children.Count);
+            AssertElement(children[0], SymbolKinds.Class, "C", "N.C");
+            AssertElement(children[1], SymbolKinds.Delegate, "D", "N.D");
+            AssertElement(children[2], SymbolKinds.Enum, "E", "N.E");
+            AssertElement(children[3], SymbolKinds.Interface, "I", "N.I");
+            AssertElement(children[4], SymbolKinds.Struct, "S", "N.S");
+        }
+
+        [Fact]
+        public async Task AllTypesInFileScopedNamespace()
+        {
+            const string source = @"
+namespace N;
+
+class C { }
+delegate void D(int i, ref string s);
+enum E { One, Two, Three }
+interface I { }
+struct S { }
 ";
 
             var response = await GetCodeStructureAsync(source);
@@ -411,6 +438,21 @@ class C
             AssertRange(elementC.Children[13], testFile.Content, "nameE2", "name");
             AssertRange(elementC.Children[14], testFile.Content, "nameE3", "name");
             AssertRange(elementC.Children[15], testFile.Content, "nameThis", "name");
+        }
+
+        [Fact]
+        public async Task NonExistingFile()
+        {
+            var request = new CodeStructureRequest
+            {
+                FileName = $"{Guid.NewGuid().ToString("N")}.cs"
+            };
+
+            var requestHandler = GetRequestHandler(SharedOmniSharpTestHost);
+            var response = await requestHandler.Handle(request);
+
+            Assert.NotNull(response);
+            Assert.Empty(response.Elements);
         }
 
         private static void AssertRange(CodeElement elementC, TestContent content, string contentSpanName, string elementRangeName)

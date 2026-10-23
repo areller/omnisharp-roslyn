@@ -1,15 +1,15 @@
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Http;
 
 namespace OmniSharp.Http.Middleware
 {
     class StopServerMiddleware
     {
-        private readonly IApplicationLifetime _lifetime;
+        private readonly IHostApplicationLifetime _lifetime;
 
-        public StopServerMiddleware(RequestDelegate next, IApplicationLifetime lifetime)
+        public StopServerMiddleware(RequestDelegate next, IHostApplicationLifetime lifetime)
         {
             _lifetime = lifetime;
         }

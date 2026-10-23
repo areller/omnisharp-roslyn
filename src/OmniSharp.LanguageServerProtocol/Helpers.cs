@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
-using Microsoft.VisualStudio.TestPlatform.CoreUtilities.Extensions;
 using Newtonsoft.Json.Linq;
 using OmniSharp.Extensions.JsonRpc;
 using OmniSharp.Extensions.LanguageServer.Protocol;
@@ -12,6 +11,7 @@ using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.LanguageServerProtocol.Handlers;
 using OmniSharp.Models;
 using OmniSharp.Models.Diagnostics;
+using Range = OmniSharp.Extensions.LanguageServer.Protocol.Models.Range;
 
 namespace OmniSharp.LanguageServerProtocol
 {
@@ -115,6 +115,15 @@ namespace OmniSharp.LanguageServerProtocol
         public static Position ToPosition(OmniSharp.Models.V2.Point point)
         {
             return new Position(point.Line, point.Column);
+        }
+
+        public static OmniSharp.Models.V2.Point FromPosition(Position position)
+        {
+            return new Models.V2.Point()
+            {
+                Line = position.Line,
+                Column = position.Character,
+            };
         }
 
         public static Range ToRange((int column, int line) start, (int column, int line) end)
@@ -232,6 +241,14 @@ namespace OmniSharp.LanguageServerProtocol
             return default;
         }
 
+        public static IEnumerable<TextEdit> ToTextEdits(LinePositionSpanTextChange[] textChanges)
+        {
+            foreach (var change in textChanges)
+            {
+                yield return ToTextEdit(change);
+            }
+        }
+
         public static IEnumerable<TextEdit> ToTextEdits(FileOperationResponse response)
         {
             if (!(response is ModifiedFileResponse modified)) yield break;
@@ -253,6 +270,11 @@ namespace OmniSharp.LanguageServerProtocol
             };
         }
 
+        public static LinePositionSpanTextChange[] FromTextEdits(IEnumerable<TextEdit> textEdits)
+        {
+            return textEdits?.Select(FromTextEdit).ToArray() ?? Array.Empty<LinePositionSpanTextChange>();
+        }
+
         public static LinePositionSpanTextChange FromTextEdit(TextEdit textEdit)
             => new LinePositionSpanTextChange
             {
@@ -262,6 +284,41 @@ namespace OmniSharp.LanguageServerProtocol
                 StartColumn = textEdit.Range.Start.Character,
                 EndColumn = textEdit.Range.End.Character
             };
+
+
+        public static T2 ConvertEnum<T1, T2>(T1 t1)
+            where T1 : struct, Enum
+            where T2 : struct, Enum
+        {
+            VerifyEnumsInSync(typeof(T1), typeof(T2));
+            // The JIT will optimize this box away
+            return (T2)(object)t1;
+        }
+
+        [Conditional("DEBUG")]
+        private static void VerifyEnumsInSync(Type enum1, Type enum2)
+        {
+            Debug.Assert(enum1.IsEnum);
+            Debug.Assert(enum2.IsEnum);
+
+            var lspValues = Enum.GetValues(enum1);
+            var modelValues = Enum.GetValues(enum2);
+            Debug.Assert(lspValues.Length == modelValues.Length);
+            for (int i = 0; i < lspValues.Length; i++)
+            {
+                var lspValue = lspValues.GetValue(i);
+                var modelValue = modelValues.GetValue(i);
+
+                if (lspValue is null || modelValue is null)
+                {
+                    Debug.Assert(lspValue is null && modelValue is null);
+                }
+                else
+                {
+                    Debug.Assert((int)lspValue == (int)modelValue);
+                }
+            }
+        }
     }
 
     public static class CommandExtensions

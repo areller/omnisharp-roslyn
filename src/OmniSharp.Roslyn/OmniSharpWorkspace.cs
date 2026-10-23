@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Host;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using OmniSharp.FileSystem;
@@ -50,7 +51,12 @@ namespace OmniSharp
 
         [ImportingConstructor]
         public OmniSharpWorkspace(HostServicesAggregator aggregator, ILoggerFactory loggerFactory, IFileSystemWatcher fileSystemWatcher)
-            : base(aggregator.CreateHostServices(), "Custom")
+            : this(aggregator.CreateHostServices(), loggerFactory, fileSystemWatcher)
+        {
+        }
+        
+        public OmniSharpWorkspace(HostServices hostServices, ILoggerFactory loggerFactory, IFileSystemWatcher fileSystemWatcher)
+            : base(hostServices, "Custom")
         {
             BufferManager = new BufferManager(this, loggerFactory, fileSystemWatcher);
             _logger = loggerFactory.CreateLogger<OmniSharpWorkspace>();
@@ -62,12 +68,12 @@ namespace OmniSharp
 
         private void OnDirectoryRemoved(string path, FileChangeType changeType)
         {
-            if(changeType == FileChangeType.DirectoryDelete)
+            if (changeType == FileChangeType.DirectoryDelete)
             {
                 var docs = CurrentSolution.Projects.SelectMany(x => x.Documents)
                     .Where(x => x.FilePath.StartsWith(path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
 
-                foreach(var doc in docs)
+                foreach (var doc in docs)
                 {
                     OnDocumentRemoved(doc.Id);
                 }
@@ -340,7 +346,8 @@ namespace OmniSharp
         {
             return CurrentSolution
                 .GetDocumentIdsWithFilePath(filePath)
-                .Select(id => CurrentSolution.GetDocument(id));
+                .Select(id => CurrentSolution.GetDocument(id))
+                .OfType<Document>();
         }
 
         public Document GetDocument(string filePath)
@@ -502,10 +509,7 @@ namespace OmniSharp
                 _fromDocument = fromDocument ?? throw new ArgumentNullException(nameof(fromDocument));
             }
 
-            public override async Task<TextAndVersion> LoadTextAndVersionAsync(
-                Workspace workspace,
-                DocumentId documentId,
-                CancellationToken cancellationToken)
+            public override async Task<TextAndVersion> LoadTextAndVersionAsync(LoadTextOptions options, CancellationToken cancellationToken)
             {
                 var sourceText = await _fromDocument.GetTextAsync();
                 var version = await _fromDocument.GetTextVersionAsync();
@@ -542,8 +546,13 @@ namespace OmniSharp
 
         public void AddAdditionalDocument(ProjectId projectId, string filePath)
         {
-            var documentId = DocumentId.CreateNewId(projectId);
             var loader = new OmniSharpTextLoader(filePath);
+            AddAdditionalDocument(projectId, filePath, loader);
+        }
+
+        public void AddAdditionalDocument(ProjectId projectId, string filePath, TextLoader loader)
+        {
+            var documentId = DocumentId.CreateNewId(projectId);
             var documentInfo = DocumentInfo.Create(documentId, Path.GetFileName(filePath), filePath: filePath, loader: loader);
             OnAdditionalDocumentAdded(documentInfo);
         }

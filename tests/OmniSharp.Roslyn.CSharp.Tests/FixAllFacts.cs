@@ -8,19 +8,18 @@ using OmniSharp.Models.Events;
 using OmniSharp.Roslyn.CSharp.Services.Refactoring;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
     public class FixAllFacts
     {
         private readonly ITestOutputHelper _testOutput;
-        private readonly TestEventEmitter<ProjectDiagnosticStatusMessage> _analysisEventListener;
+        private readonly TestEventEmitter<BackgroundDiagnosticStatusMessage> _analysisEventListener;
 
         public FixAllFacts(ITestOutputHelper testOutput)
         {
             _testOutput = testOutput;
-            _analysisEventListener = new TestEventEmitter<ProjectDiagnosticStatusMessage>();
+            _analysisEventListener = new TestEventEmitter<BackgroundDiagnosticStatusMessage>();
         }
 
         [Fact]

@@ -1,16 +1,10 @@
 ﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Host;
 using Microsoft.Extensions.Logging;
 using OmniSharp.Extensions;
-using OmniSharp.Services;
-using OmniSharp.Utilities;
+using OmniSharp.Options;
 using System;
-using System.Collections.Generic;
 using System.Composition;
-using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -24,10 +18,10 @@ namespace OmniSharp.Roslyn.CSharp.Services.Decompilation
         private readonly Lazy<OmniSharpCSharpDecompiledSourceService> _service;
 
         [ImportingConstructor]
-        public DecompilationExternalSourceService(IAssemblyLoader loader, ILoggerFactory loggerFactory) : base(loader)
+        public DecompilationExternalSourceService(ILoggerFactory loggerFactory, OmniSharpOptions omnisharpOptions) : base()
         {
             _loggerFactory = loggerFactory;
-            _service = new Lazy<OmniSharpCSharpDecompiledSourceService>(() => new OmniSharpCSharpDecompiledSourceService(_loader, _loggerFactory));
+            _service = new Lazy<OmniSharpCSharpDecompiledSourceService>(() => new OmniSharpCSharpDecompiledSourceService(omnisharpOptions, _loggerFactory));
         }
 
         public async Task<(Document document, string documentPath)> GetAndAddExternalSymbolDocument(Project project, ISymbol symbol, CancellationToken cancellationToken)

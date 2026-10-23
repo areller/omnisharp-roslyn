@@ -5,7 +5,6 @@ using OmniSharp.Models.SignatureHelp;
 using OmniSharp.Roslyn.CSharp.Services.Signatures;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -497,6 +496,62 @@ public class MyTestAttribute : Attribute
         [Theory]
         [InlineData("dummy.cs")]
         [InlineData("dummy.csx")]
+        public async Task TestForImplicitCreationConstructorHelp(string filename)
+        {
+            const string source =
+@"class Program
+{
+    public static void Main()
+    {
+        Program program = new($$)
+    }
+    public Program()
+    {
+    }
+    public Program(bool b)
+    {
+    }
+    public Program(Program p)
+    {
+    }
+}";
+
+            var actual = await GetSignatureHelp(filename, source);
+            Assert.Equal(3, actual.Signatures.Count());
+        }
+
+        [Theory]
+        [InlineData("dummy.cs")]
+        [InlineData("dummy.csx")]
+        public async Task TestForImplicitCreationCtorWithOverloads(string filename)
+        {
+            const string source =
+@"class Program
+{
+    public static void Main()
+    {
+        Program program = new(true, 12$$3)
+    }
+    public Program()
+    {
+    }
+    /// ctor2
+    public Program(bool b, int n)
+    {
+    }
+    public Program(Program p, int n)
+    {
+    }
+}";
+            var actual = await GetSignatureHelp(filename, source);
+            Assert.Equal(3, actual.Signatures.Count());
+            Assert.Equal(1, actual.ActiveParameter);
+            Assert.Contains("ctor2", actual.Signatures.ElementAt(actual.ActiveSignature).Documentation);
+        }
+
+        [Theory]
+        [InlineData("dummy.cs")]
+        [InlineData("dummy.csx")]
         public async Task TestForCtorWithOverloads(string filename)
         {
             const string source =
@@ -606,7 +661,7 @@ class B : A
     }
 }";
             var actual = await GetSignatureHelp(filename, source);
-            Assert.Equal(2,actual.Signatures.Count());
+            Assert.Equal(2, actual.Signatures.Count());
         }
 
         [Theory]
@@ -706,7 +761,7 @@ class B : A
             Assert.Equal(2, actual.Signatures.Count());
             var signatures = actual.Signatures.OrderBy(sig => sig.Parameters.Count());
             Assert.Single(signatures.ElementAt(0).Parameters);
-            Assert.Equal(3,signatures.ElementAt(1).Parameters.Count());
+            Assert.Equal(3, signatures.ElementAt(1).Parameters.Count());
         }
 
         [Theory]
@@ -1049,6 +1104,24 @@ public class ProgramClass
             Assert.Single(signature.Parameters);
             Assert.Equal("n", signature.Parameters.ElementAt(0).Name);
             Assert.Equal("int n", signature.Parameters.ElementAt(0).Label);
+        }
+
+        [Fact]
+        public async Task BaseObjectCreationWithoutArguments()
+        {
+            const string source =
+@"public static class Foo {
+    public static string GetClientCredentialsToken() {
+        AccessTokenRequest request = new AccessTokenRequest {
+            client$$Id = ""foo"",
+        }
+    }
+}
+";
+
+            var actual = await GetSignatureHelp("dummy.cs", source);
+
+            Assert.Null(actual);
         }
 
         private async Task<SignatureHelpResponse> GetSignatureHelp(string filename, string source)

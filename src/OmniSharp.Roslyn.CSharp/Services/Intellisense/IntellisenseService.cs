@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Composition;
 using System.Linq;
 using System.Threading.Tasks;
+using OmniSharp.Roslyn.RoslynInternals.Completion;
+using OmniSharp.Roslyn.Utilities;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Completion;
 using Microsoft.CodeAnalysis.Recommendations;
@@ -12,6 +14,9 @@ using OmniSharp.Mef;
 using OmniSharp.Models.AutoComplete;
 using OmniSharp.Options;
 using OmniSharp.Roslyn.CSharp.Services.Documentation;
+using OmniSharp.Roslyn.CSharp.Services.Completion;
+using CompletionService = Microsoft.CodeAnalysis.Completion.CompletionService;
+using System.Threading;
 
 namespace OmniSharp.Roslyn.CSharp.Services.Intellisense
 {
@@ -20,13 +25,17 @@ namespace OmniSharp.Roslyn.CSharp.Services.Intellisense
     public class IntellisenseService : IRequestHandler<AutoCompleteRequest, IEnumerable<AutoCompleteResponse>>
     {
         private readonly OmniSharpWorkspace _workspace;
+
         private readonly FormattingOptions _formattingOptions;
 
+        private readonly OmniSharpOptions _omniSharpOptions;
+
         [ImportingConstructor]
-        public IntellisenseService(OmniSharpWorkspace workspace, FormattingOptions formattingOptions)
+        public IntellisenseService(OmniSharpWorkspace workspace, FormattingOptions formattingOptions, OmniSharpOptions omniSharpOptions)
         {
             _workspace = workspace;
             _formattingOptions = formattingOptions;
+            _omniSharpOptions = omniSharpOptions;
         }
 
         public async Task<IEnumerable<AutoCompleteResponse>> Handle(AutoCompleteRequest request)
@@ -40,12 +49,15 @@ namespace OmniSharp.Roslyn.CSharp.Services.Intellisense
                 var sourceText = await document.GetTextAsync();
                 var position = sourceText.GetTextPosition(request);
                 var service = CompletionService.GetService(document);
-                var completionList = await service.GetCompletionsAsync(document, position);
+                var options = new OmniSharpCompletionOptions(
+                    ShowItemsFromUnimportedNamespaces: _omniSharpOptions.RoslynExtensionsOptions.EnableImportCompletion,
+                    ForceExpandedCompletionIndexCreation: false);
+                var completionList = await RoslynCompletionService.GetCompletionsAsync(service, document, position, trigger: default, roles: null, options, CancellationToken.None);
 
                 if (completionList != null)
                 {
                     // Only trigger on space if Roslyn has object creation items
-                    if (request.TriggerCharacter == " " && !completionList.Items.Any(i => i.IsObjectCreationCompletionItem()))
+                    if (request.TriggerCharacter == " " && !completionList.Items.Any(i => i.GetProviderName() is CompletionListBuilder.ObjectCreationCompletionProvider))
                     {
                         return completions;
                     }
@@ -119,16 +131,12 @@ namespace OmniSharp.Roslyn.CSharp.Services.Intellisense
 
         private IEnumerable<AutoCompleteResponse> MakeSnippetedResponses(AutoCompleteRequest request, ISymbol symbol, string completionText, bool preselect, bool isSuggestionMode)
         {
-            switch (symbol)
+            return symbol switch
             {
-                case IMethodSymbol methodSymbol:
-                    return MakeSnippetedResponses(request, methodSymbol, completionText, preselect, isSuggestionMode);
-                case INamedTypeSymbol typeSymbol:
-                    return MakeSnippetedResponses(request, typeSymbol, completionText, preselect, isSuggestionMode);
-
-                default:
-                    return new[] { MakeAutoCompleteResponse(request, symbol, completionText, preselect, isSuggestionMode) };
-            }
+                IMethodSymbol methodSymbol => MakeSnippetedResponses(request, methodSymbol, completionText, preselect, isSuggestionMode),
+                INamedTypeSymbol typeSymbol => MakeSnippetedResponses(request, typeSymbol, completionText, preselect, isSuggestionMode),
+                _ => new[] { MakeAutoCompleteResponse(request, symbol, completionText, preselect, isSuggestionMode) },
+            };
         }
 
         private IEnumerable<AutoCompleteResponse> MakeSnippetedResponses(AutoCompleteRequest request, IMethodSymbol methodSymbol, string completionText, bool preselect, bool isSuggestionMode)

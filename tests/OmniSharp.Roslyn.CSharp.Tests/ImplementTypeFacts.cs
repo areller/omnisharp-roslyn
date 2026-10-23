@@ -6,7 +6,6 @@ using OmniSharp.Models.V2.CodeActions;
 using OmniSharp.Roslyn.CSharp.Services.Refactoring.V2;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Roslyn.CSharp.Tests
 {
@@ -120,7 +119,7 @@ public class Foo : I$$Foo
                     Column = point.Offset,
                     FileName = testFile.FileName,
                     Buffer = testFile.Content.Code,
-                    Identifier = "False;False;True:global::IFoo;AssemblyName;Microsoft.CodeAnalysis.ImplementInterface.AbstractImplementInterfaceService+ImplementInterfaceCodeAction;",
+                    Identifier = "False;False;True:global::IFoo;Microsoft.CodeAnalysis.ImplementInterface.AbstractImplementInterfaceService+ImplementInterfaceCodeAction;",
                     WantsTextChanges = true,
                     WantsAllCodeActionOperations = true
                 };

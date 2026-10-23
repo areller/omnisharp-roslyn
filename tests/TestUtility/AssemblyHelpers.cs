@@ -5,7 +5,7 @@ namespace TestUtility
 {
     public static class AssemblyHelpers
     {
-        public const string CorLibName = "mscorlib";
+        public const string CorLibName = "System.Private.CoreLib";
 
         public static Assembly FromType(Type type)
         {

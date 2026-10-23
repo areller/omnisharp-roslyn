@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Threading.Tasks;
@@ -36,7 +37,7 @@ namespace OmniSharp.Roslyn.CSharp.Services.Structure
             var document = await _workspace.GetDocumentFromFullProjectModelAsync(request.FileName);
             if (document == null)
             {
-                return null;
+                return new CodeStructureResponse { Elements = Array.Empty<CodeElement>() };
             }
 
             var elements = await GetCodeElementsAsync(document);
@@ -84,7 +85,7 @@ namespace OmniSharp.Roslyn.CSharp.Services.Structure
                 case EnumDeclarationSyntax enumDeclaration:
                     yield return CreateCodeElement(enumDeclaration, text, semanticModel);
                     break;
-                case NamespaceDeclarationSyntax namespaceDeclaration:
+                case BaseNamespaceDeclarationSyntax namespaceDeclaration:
                     yield return CreateCodeElement(namespaceDeclaration, text, semanticModel);
                     break;
                 case BaseMethodDeclarationSyntax baseMethodDeclaration:
@@ -185,7 +186,7 @@ namespace OmniSharp.Roslyn.CSharp.Services.Structure
             return builder.ToCodeElement();
         }
 
-        private CodeElement CreateCodeElement(NamespaceDeclarationSyntax namespaceDeclaration, SourceText text, SemanticModel semanticModel)
+        private CodeElement CreateCodeElement(BaseNamespaceDeclarationSyntax namespaceDeclaration, SourceText text, SemanticModel semanticModel)
         {
             var symbol = semanticModel.GetDeclaredSymbol(namespaceDeclaration);
             if (symbol == null)

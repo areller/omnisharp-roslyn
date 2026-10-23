@@ -4,7 +4,6 @@ using Microsoft.CodeAnalysis.Text;
 using OmniSharp.Roslyn.Utilities;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Tests
 {
@@ -26,9 +25,8 @@ namespace OmniSharp.Tests
 
                 var textChange = new TextChange(TextSpan.FromBounds(8, 11), "\n}");
 
-                var adjustedTextChanges = TextChanges.Convert(text, textChange);
+                var adjustedTextChange = TextChanges.Convert(text, textChange);
 
-                var adjustedTextChange = adjustedTextChanges.First();
                 Assert.Equal("\r\n}", adjustedTextChange.NewText);
                 Assert.Equal(0, adjustedTextChange.StartLine);
                 Assert.Equal(7, adjustedTextChange.StartColumn);
@@ -48,9 +46,8 @@ namespace OmniSharp.Tests
 
                 var textChange = new TextChange(TextSpan.FromBounds(5, 7), "\r\n {\r");
 
-                var adjustedTextChanges = TextChanges.Convert(text, textChange);
+                var adjustedTextChange = TextChanges.Convert(text, textChange);
 
-                var adjustedTextChange = adjustedTextChanges.First();
                 Assert.Equal("\r\n {\r\n", adjustedTextChange.NewText);
                 Assert.Equal(0, adjustedTextChange.StartLine);
                 Assert.Equal(5, adjustedTextChange.StartColumn);

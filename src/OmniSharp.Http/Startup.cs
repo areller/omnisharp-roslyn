@@ -18,22 +18,15 @@ namespace OmniSharp.Http
 {
     internal class Startup
     {
-        private readonly IOmniSharpEnvironment _environment;
-        private readonly IEventEmitter _eventEmitter;
         private CompositionHost _compositionHost;
-        private PluginAssemblies _commandLinePlugins;
 
-        public Startup(IOmniSharpEnvironment environment, IEventEmitter eventEmitter, PluginAssemblies commandLinePlugins)
+        public static void AddOmniSharpServices(
+            IServiceCollection services,
+            IOmniSharpEnvironment environment,
+            IEventEmitter eventEmitter,
+            ConfigurationResult configurationResult)
         {
-            _environment = environment;
-            _eventEmitter = eventEmitter;
-            _commandLinePlugins = commandLinePlugins;
-        }
-
-        public IServiceProvider ConfigureServices(IServiceCollection services)
-        {
-            var configuration = new ConfigurationBuilder(_environment).Build();
-            var serviceProvider = CompositionHostBuilder.CreateDefaultServiceProvider(_environment, configuration, _eventEmitter, services,
+            CompositionHostBuilder.ConfigureDefaultServices(environment, configurationResult.Configuration, eventEmitter, services,
                 configureLogging: builder =>
                 {
                     builder.AddConsole();
@@ -45,38 +38,43 @@ namespace OmniSharp.Http
                     builder.AddFilter(
                         (category, logLevel) =>
                             category.Equals(exceptionHandlerMiddlewareName, StringComparison.OrdinalIgnoreCase) ||
-                            (_environment.LogLevel <= logLevel &&
+                            (environment.LogLevel <= logLevel &&
                                 category.StartsWith("OmniSharp", StringComparison.OrdinalIgnoreCase) &&
                                 !category.Equals(workspaceInformationServiceName, StringComparison.OrdinalIgnoreCase) &&
                                 !category.Equals(projectEventForwarder, StringComparison.OrdinalIgnoreCase)));
                 });
-
-            var options = serviceProvider.GetRequiredService<IOptionsMonitor<OmniSharpOptions>>();
-            var plugins = _commandLinePlugins.AssemblyNames.Concat(options.CurrentValue.Plugins.GetNormalizedLocationPaths(_environment));
-
-            var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger<Startup>();
-            var assemblyLoader = serviceProvider.GetRequiredService<IAssemblyLoader>();
-            _compositionHost = new CompositionHostBuilder(serviceProvider)
-                .WithOmniSharpAssemblies()
-                .WithAssemblies(assemblyLoader.LoadByAssemblyNameOrPath(logger, plugins).ToArray())
-                .Build(_environment.TargetDirectory);
-
-            return serviceProvider;
         }
 
         public void Configure(
             IApplicationBuilder app,
             IServiceProvider serviceProvider,
             ILoggerFactory loggerFactory,
-            HttpEnvironment httpEnvironment)
+            HttpEnvironment httpEnvironment,
+            IOmniSharpEnvironment environment,
+            PluginAssemblies commandLinePlugins,
+            ConfigurationResult configurationResult)
         {
-            var workspace = _compositionHost.GetExport<OmniSharpWorkspace>();
+            var options = serviceProvider.GetRequiredService<IOptionsMonitor<OmniSharpOptions>>();
+            var plugins = commandLinePlugins.AssemblyNames.Concat(options.CurrentValue.Plugins.GetNormalizedLocationPaths(environment));
+
             var logger = loggerFactory.CreateLogger<Startup>();
+
+            if (configurationResult.HasError())
+            {
+                logger.LogError(configurationResult.Exception, "There was an error when reading the OmniSharp configuration, starting with the default options.");
+            }
+
+            var assemblyLoader = serviceProvider.GetRequiredService<IAssemblyLoader>();
+            _compositionHost = new CompositionHostBuilder(serviceProvider)
+                .WithOmniSharpAssemblies()
+                .WithAssemblies(assemblyLoader.LoadByAssemblyNameOrPath(logger, plugins).ToArray())
+                .Build(environment.TargetDirectory);
+
+            var workspace = _compositionHost.GetExport<OmniSharpWorkspace>();
 
             logger.LogInformation($"Starting OmniSharp on {Platform.Current}");
 
-            app.UseRequestLogging();
+            app.UseMiddleware<LoggingMiddleware>();
             app.UseExceptionHandler("/error");
             app.UseMiddleware<EndpointMiddleware>(_compositionHost);
             app.UseMiddleware<StatusMiddleware>(workspace);
@@ -84,7 +82,7 @@ namespace OmniSharp.Http
 
             WorkspaceInitializer.Initialize(serviceProvider, _compositionHost);
 
-            logger.LogInformation($"Omnisharp server running on port '{httpEnvironment.Port}' at location '{_environment.TargetDirectory}' on host {_environment.HostProcessId}.");
+            logger.LogInformation($"Omnisharp server running on port '{httpEnvironment.Port}' at location '{environment.TargetDirectory}' on host {environment.HostProcessId}.");
         }
     }
 }

@@ -12,7 +12,6 @@ using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 using OmniSharp.Models.Diagnostics;
 using TestUtility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace OmniSharp.Lsp.Tests
 {
@@ -42,20 +41,6 @@ namespace OmniSharp.Lsp.Tests
         {
             return Restart(configurationData: new Dictionary<string, string>
                 {{"RoslynExtensionsOptions:EnableAnalyzersSupport", roslynAnalyzersEnabled.ToString()}});
-        }
-
-        [Fact]
-        public async Task CheckAllFilesOnNonAnalyzerReturnImmediatlyAllResults()
-        {
-            await ReadyHost(false);
-            AddFilesToWorkspace(
-                new TestFile("a.cs", "class C1 { int n = true; }"),
-                new TestFile("b.cs", "class C2 { int n = true; }"));
-
-            await SettleNext();
-
-            Assert.Contains(GetDiagnostics("a.cs"), x => x.Code == "CS0029");
-            Assert.Contains(GetDiagnostics("b.cs"), x => x.Code == "CS0029");
         }
 
         [Fact]

@@ -2,42 +2,37 @@
     "DotNetInstallScriptURL": "https://dot.net/v1",
     "DotNetChannel": "Preview",
     "DotNetVersions": [
-        "2.1.814",
-        "3.1.407",
-        "5.0.104",
-        "6.0.100-preview.2.21155.3"
+        "8.0.425",
+        "9.0.318",
+        "10.0.401",
+        "11.0.100-rc.1.26425.128"
     ],
-    "RequiredMonoVersion": "6.6.0",
     "DownloadURL": "https://roslynomnisharp.blob.core.windows.net/ext",
-    "MonoRuntimeMacOS": "mono.macOS-6.12.0.90.zip",
-    "MonoRuntimeLinux32": "mono.linux-x86-6.12.0.90.zip",
-    "MonoRuntimeLinux64": "mono.linux-x86_64-6.12.0.90.zip",
-    "HostProjects": [
-        "OmniSharp.Stdio.Driver",
-        "OmniSharp.Http.Driver"
-    ],
+    "HostProjects": ["OmniSharp.Stdio.Driver", "OmniSharp.Http.Driver"],
     "TestProjects": [
         "OmniSharp.MSBuild.Tests",
         "OmniSharp.Roslyn.CSharp.Tests",
+        "OmniSharp.Lsp.Tests",
+        "OmniSharp.DotNetTest.Tests",
+        "OmniSharp.Script.Tests",
+        "OmniSharp.Cake.Tests",
         "OmniSharp.Http.Tests",
         "OmniSharp.Stdio.Tests",
-        "OmniSharp.DotNetTest.Tests",
-        "OmniSharp.Tests",
-        "OmniSharp.Cake.Tests",
-        "OmniSharp.Script.Tests",
-        "OmniSharp.Lsp.Tests"
+        "OmniSharp.Tests"
     ],
     "TestAssets": [
         "NUnitTestProject",
         "XunitTestProject",
         "MSTestProject",
         "ProjectAndSolution",
+        "ProjectAndSolutionX",
         "ProjectAndSolutionWithGlobs",
         "ProjectAndSolutionWithProjectSection",
         "TwoProjectsWithSolution",
         "ProjectWithGeneratedFile",
         "CSharpAndFSharp",
         "ProjectWithMismatchedFileName",
+        "ProjectWithWildcardPackageReference",
         "SolutionWithSignedProject",
         "ProjectWithMultiTFMLib",
         "ExternAlias",
@@ -45,11 +40,9 @@
         "ProjectWithDisabledAnalyzers",
         "ProjectWithDisabledAnalyzers2",
         "ProjectWithAnalyzers",
-        "NetCore21Project",
-        "NetCore31Project",
-        "Net50Project",
         "ProjectWithAnalyzersAndEditorConfig",
-        "ProjectWithParentEditorConfig"
+        "ProjectWithParentEditorConfig",
+        "TwoProjectsWithAnalyzerSuppressor"
     ],
     "CakeTestAssets": [
         "CakeProject"

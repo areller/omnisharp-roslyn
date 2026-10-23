@@ -15,11 +15,10 @@ using Microsoft.Extensions.Options;
 using OmniSharp.Eventing;
 using OmniSharp.FileSystem;
 using OmniSharp.FileWatching;
-using OmniSharp.Host.Services;
 using OmniSharp.Mef;
-using OmniSharp.MSBuild.Discovery;
 using OmniSharp.Options;
 using OmniSharp.Roslyn;
+using OmniSharp.Roslyn.Utilities;
 using OmniSharp.Services;
 
 namespace OmniSharp
@@ -56,17 +55,7 @@ namespace OmniSharp
             var fileSystemWatcher = _serviceProvider.GetRequiredService<IFileSystemWatcher>();
             var logger = loggerFactory.CreateLogger<CompositionHostBuilder>();
 
-            // We must register an MSBuild instance before composing MEF to ensure that
-            // our AssemblyResolve event is hooked up first.
-            var msbuildLocator = _serviceProvider.GetRequiredService<IMSBuildLocator>();
             var dotNetInfo = dotNetCliService.GetInfo(workingDirectory);
-
-            // Don't register the default instance if an instance is already registered!
-            // This is for tests, where the MSBuild instance may be registered early.
-            if (msbuildLocator.RegisteredInstance == null)
-            {
-                msbuildLocator.RegisterDefaultInstance(logger, dotNetInfo);
-            }
 
             config = config
                 .WithProvider(MefValueProvider.From(_serviceProvider))
@@ -81,7 +70,6 @@ namespace OmniSharp
                 .WithProvider(MefValueProvider.From(assemblyLoader))
                 .WithProvider(MefValueProvider.From(analyzerAssemblyLoader))
                 .WithProvider(MefValueProvider.From(dotNetCliService))
-                .WithProvider(MefValueProvider.From(msbuildLocator))
                 .WithProvider(MefValueProvider.From(eventEmitter))
                 .WithProvider(MefValueProvider.From(dotNetInfo));
 
@@ -127,6 +115,18 @@ namespace OmniSharp
         {
             services ??= new ServiceCollection();
 
+            ConfigureDefaultServices(environment, configuration, eventEmitter, services, configureLogging);
+
+            return services.BuildServiceProvider();
+        }
+
+        public static void ConfigureDefaultServices(
+            IOmniSharpEnvironment environment,
+            IConfigurationRoot configuration,
+            IEventEmitter eventEmitter,
+            IServiceCollection services,
+            Action<ILoggingBuilder> configureLogging = null)
+        {
             services.TryAddSingleton(_ => new ManualFileSystemWatcher());
             services.TryAddSingleton<IFileSystemNotifier>(sp => sp.GetRequiredService<ManualFileSystemWatcher>());
             services.TryAddSingleton<IFileSystemWatcher>(sp => sp.GetRequiredService<ManualFileSystemWatcher>());
@@ -137,24 +137,16 @@ namespace OmniSharp
             // Caching
             services.AddSingleton<IMemoryCache, MemoryCache>();
             services.AddSingleton<IAssemblyLoader, AssemblyLoader>();
-            services.AddSingleton<IAnalyzerAssemblyLoader, AnalyzerAssemblyLoader>();
+            services.AddSingleton(sp => ShadowCopyAnalyzerAssemblyLoader.Instance);
             services.AddOptions();
-
-            services.AddSingleton<IDotNetCliService, DotNetCliService>();
-
-            // MSBuild
-            services.AddSingleton<IMSBuildLocator>(sp =>
-                MSBuildLocator.CreateDefault(
-                    loggerFactory: sp.GetService<ILoggerFactory>(),
-                    assemblyLoader: sp.GetService<IAssemblyLoader>(),
-                    msbuildConfiguration: configuration.GetSection("msbuild")));
-
 
             // Setup the options from configuration
             services.Configure<OmniSharpOptions>(configuration)
                 .PostConfigure<OmniSharpOptions>(OmniSharpOptions.PostConfigure);
             services.AddSingleton(configuration);
             services.AddSingleton<IConfiguration>(configuration);
+
+            services.AddSingleton<IDotNetCliService, DotNetCliService>();
 
             services.AddLogging(builder =>
             {
@@ -170,8 +162,6 @@ namespace OmniSharp
 
                 configureLogging?.Invoke(builder);
             });
-
-            return services.BuildServiceProvider();
         }
 
         public CompositionHostBuilder WithOmniSharpAssemblies()

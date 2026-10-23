@@ -62,7 +62,7 @@ namespace OmniSharp.LanguageServerProtocol
                 .WithInput(input)
                 .WithOutput(output)
                 // initializeParams from the client won't be arriving yet, configure with app loglevel
-                .ConfigureLogging(GetLogBuilderAction(configureLogging, application.LogLevel))
+                .ConfigureLogging(AddLanguageProtocolLogging(application.LogLevel))
                 .OnInitialize(Initialize)
                 .OnInitialized(Initialized)
                 .WithServices(ConfigureServices);
@@ -178,12 +178,13 @@ namespace OmniSharp.LanguageServerProtocol
             }
         }
 
-        private static Action<ILoggingBuilder> GetLogBuilderAction(Action<ILoggingBuilder> configureLogging, LogLevel loglevel) => builder =>
+        private static Action<ILoggingBuilder> AddLanguageProtocolLogging(LogLevel loglevel)
+            => builder => builder.AddLanguageProtocolLogging().SetMinimumLevel(loglevel);
+
+        private static Action<ILoggingBuilder> ConfigureLogging(Action<ILoggingBuilder> configureLogging, LogLevel loglevel) => builder =>
         {
             configureLogging?.Invoke(builder);
-            builder
-                .AddLanguageProtocolLogging()
-                .SetMinimumLevel(loglevel);
+            builder.SetMinimumLevel(loglevel);
         };
 
         private static (IServiceProvider serviceProvider, CompositionHost compositionHost) CreateCompositionHost(
@@ -202,24 +203,23 @@ namespace OmniSharp.LanguageServerProtocol
                 application.LogLevel < logLevel ? application.LogLevel : logLevel,
                 application.OtherArgs.ToArray());
 
-            var configurationRoot = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
-                    .AddConfiguration(new ConfigurationBuilder(environment).Build())
-                    .AddConfiguration(server.Configuration.GetSection("csharp"))
-                    .AddConfiguration(server.Configuration.GetSection("omnisharp"))
-                    .Build()
-                ;
-
+            var configurationResult = new ConfigurationBuilder(environment).Build(b =>
+                b.AddConfiguration(server.Configuration.GetSection("csharp")).AddConfiguration(server.Configuration.GetSection("omnisharp")));
             var eventEmitter = new LanguageServerEventEmitter(server);
 
             services.AddSingleton(server)
                 .AddSingleton<ILanguageServerFacade>(server);
 
             var serviceProvider =
-                CompositionHostBuilder.CreateDefaultServiceProvider(environment, configurationRoot, eventEmitter,
-                    services, GetLogBuilderAction(configureLogging, environment.LogLevel));
+                CompositionHostBuilder.CreateDefaultServiceProvider(environment, configurationResult.Configuration, eventEmitter,
+                    services, ConfigureLogging(configureLogging, environment.LogLevel));
 
             var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger<LanguageServerHost>();
+            if (configurationResult.HasError())
+            {
+                logger.LogError(configurationResult.Exception, "There was an error when reading the OmniSharp configuration, starting with the default options.");
+            }
 
             var options = serviceProvider.GetRequiredService<IOptionsMonitor<OmniSharpOptions>>();
             var plugins = application.CreatePluginAssemblies(options.CurrentValue, environment);
@@ -242,7 +242,7 @@ namespace OmniSharp.LanguageServerProtocol
                 .GroupBy(x => x.Language)
                 .Select(x => (
                     language: x.Key,
-                    selector: new DocumentSelector(x
+                    selector: new TextDocumentSelector(x
                         .SelectMany(z => z.Extensions)
                         .Distinct()
                         .SelectMany(z =>
@@ -251,14 +251,14 @@ namespace OmniSharp.LanguageServerProtocol
                             {
                                 return new[]
                                 {
-                                    new DocumentFilter() {Pattern = $"**/*{z}"},
-                                    new DocumentFilter() {Scheme = "csharp"}
+                                    new TextDocumentFilter() {Pattern = $"**/*{z}"},
+                                    new TextDocumentFilter() {Scheme = "csharp"}
                                 };
                             }
 
                             return new[]
                             {
-                                new DocumentFilter() {Pattern = $"**/*{z}"},
+                                new TextDocumentFilter() {Pattern = $"**/*{z}"},
                             };
                         })
                     )
@@ -371,21 +371,26 @@ namespace OmniSharp.LanguageServerProtocol
             var serializer = server.Services.GetRequiredService<ISerializer>();
             server.Register(s =>
             {
-                foreach (var handler in OmniSharpTextDocumentSyncHandler.Enumerate(handlers, workspace, documentVersions)
-                    .Concat(OmniSharpDefinitionHandler.Enumerate(handlers))
-                    .Concat(OmniSharpHoverHandler.Enumerate(handlers))
-                    .Concat(OmniSharpCompletionHandler.Enumerate(handlers))
-                    .Concat(OmniSharpSignatureHelpHandler.Enumerate(handlers))
-                    .Concat(OmniSharpRenameHandler.Enumerate(handlers))
-                    .Concat(OmniSharpWorkspaceSymbolsHandler.Enumerate(handlers))
-                    .Concat(OmniSharpDocumentSymbolHandler.Enumerate(handlers))
-                    .Concat(OmniSharpReferencesHandler.Enumerate(handlers))
-                    .Concat(OmniSharpImplementationHandler.Enumerate(handlers))
+                foreach (var handler in OmniSharpCodeActionHandler.Enumerate(handlers, server, documentVersions)
                     .Concat(OmniSharpCodeLensHandler.Enumerate(handlers))
-                    .Concat(OmniSharpCodeActionHandler.Enumerate(handlers, serializer, server, documentVersions))
+                    .Concat(OmniSharpCompletionHandler.Enumerate(handlers))
+                    .Concat(OmniSharpDefinitionHandler.Enumerate(handlers))
                     .Concat(OmniSharpDocumentFormattingHandler.Enumerate(handlers))
                     .Concat(OmniSharpDocumentFormatRangeHandler.Enumerate(handlers))
-                    .Concat(OmniSharpDocumentOnTypeFormattingHandler.Enumerate(handlers)))
+                    .Concat(OmniSharpDocumentOnTypeFormattingHandler.Enumerate(handlers))
+                    .Concat(OmniSharpDocumentHighlightHandler.Enumerate(handlers))
+                    .Concat(OmniSharpDocumentSymbolHandler.Enumerate(handlers))
+                    .Concat(OmniSharpFoldingRangenHandler.Enumerate(handlers))
+                    .Concat(OmniSharpHoverHandler.Enumerate(handlers))
+                    .Concat(OmniSharpImplementationHandler.Enumerate(handlers))
+                    .Concat(OmniSharpInlayHintHandler.Enumerate(handlers))
+                    .Concat(OmniSharpReferencesHandler.Enumerate(handlers))
+                    .Concat(OmniSharpRenameHandler.Enumerate(handlers))
+                    .Concat(OmniSharpSemanticTokensHandler.Enumerate(handlers))
+                    .Concat(OmniSharpSignatureHelpHandler.Enumerate(handlers))
+                    .Concat(OmniSharpTextDocumentSyncHandler.Enumerate(handlers, workspace, documentVersions))
+                    .Concat(OmniSharpTypeDefinitionHandler.Enumerate(handlers))
+                    .Concat(OmniSharpWorkspaceSymbolsHandler.Enumerate(handlers)))
                 {
                     s.AddHandlers(handler);
                 }
